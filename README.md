@@ -1,47 +1,95 @@
 # Librarr
 
 [![Build & Test](https://github.com/JeremiahM37/librarr/actions/workflows/test.yml/badge.svg)](https://github.com/JeremiahM37/librarr/actions/workflows/test.yml)
-[![Release](https://img.shields.io/github/v/release/JeremiahM37/librarr?include_prereleases)](https://github.com/JeremiahM37/librarr/releases)
+[![Release](https://img.shields.io/github/v/release/JeremiahM37/librarr)](https://github.com/JeremiahM37/librarr/releases)
 [![Go Report Card](https://goreportcard.com/badge/github.com/JeremiahM37/librarr)](https://goreportcard.com/report/github.com/JeremiahM37/librarr)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**The missing *arr for books.** Self-hosted book, audiobook, and manga search and download manager — like Sonarr/Radarr but for your reading library.
+**The missing *arr for books.** Self-hosted book, audiobook, and manga search and download manager -- like Sonarr/Radarr but for your reading library.
 
-Librarr searches 13 sources simultaneously, scores results by confidence, and auto-imports into your Calibre, Audiobookshelf, Kavita, or Komga library. Single 17MB Go binary. No runtime dependencies.
+Librarr searches 13 sources simultaneously, scores results by confidence, and auto-imports into your Calibre, Audiobookshelf, Kavita, or Komga library. Single ~17MB Go binary. No runtime dependencies.
 
-### Highlights
+## Why Librarr?
 
-- **Import your Goodreads/StoryGraph "to-read" list** via CSV and bulk-download everything
-- **Request workflow** — users request books, admins approve, downloads happen automatically (like Jellyseerr for books)
-- **Book metadata enrichment** — covers, descriptions, series info, and ISBN from Open Library
-- **Torznab API** — add Librarr as an indexer in Prowlarr or Readarr (it works both ways)
-- **13 search sources** — Anna's Archive, AudioBookBay, MangaDex, Nyaa, Open Library, Gutenberg, and more
-- **OPDS 1.2 feed** — browse your library from any e-reader
+- **Import your Goodreads or StoryGraph library** via CSV and bulk-download everything
+- **Request workflow** -- users request books, admins approve, downloads happen automatically (like Jellyseerr for books)
+- **Quality profiles** -- rank formats (EPUB > PDF > MOBI), auto-upgrade when a better version appears
+- **Author monitoring** -- follow authors and get notified when new releases are found
+- **Series auto-complete** -- detects gaps in series and searches for missing volumes
+- **Torznab API** -- add Librarr as an indexer in Prowlarr or Readarr (it works both ways)
+- **OPDS 1.2 feed** -- browse your library from any e-reader app
 
 ## Features
 
+### Search and Scoring
+
 - **13 search sources** in one UI (see table below)
-- **Search result scoring** — 0-100 confidence with breakdown (title match, author, format, seeders, size)
-- **Request/approval system** — users request → admin approves → auto-search + download + notification
-- **In-app notifications** — persistent alerts when downloads complete or fail
-- **Admin dashboard** — library stats, source health, activity log, bulk operations
-- **File uploads** — drag and drop ebooks/audiobooks, auto-organize + library scan
-- **4 download clients** — qBittorrent, SABnzbd, Deluge, Transmission with priority ordering
-- **Torznab/Newznab API** -- add Librarr as an indexer in Prowlarr, Readarr, or any Torznab-compatible app
-- **OPDS 1.2 feed** -- browse and download books from any e-reader or OPDS client
-- **Post-download pipeline** -- organize files by author/title, import into Calibre/Audiobookshelf/Kavita/Komga
-- **Open Library metadata** — covers, descriptions, series, ISBN, publication year fetched automatically
-- **EPUB verification** -- checks title word overlap to detect wrong-book downloads
-- **Multi-user auth** -- session login with bcrypt passwords, TOTP 2FA, admin/user roles
-- **OIDC / SSO** -- OpenID Connect support for Authelia, Keycloak, Authentik, etc.
+- **Confidence scoring** -- 0-100 score with breakdown (title match, author match, format, seeders, file size)
+- **Quality profiles** -- define format ranking and preferred attributes, auto-upgrade existing downloads
+- **Release profiles** -- preferred and excluded words for fine-grained filtering
+- **Blocklist** -- failed downloads are auto-blocked to prevent retries; manual entries supported
+
+### Download Management
+
+- **4 download clients** -- qBittorrent, Transmission, Deluge, SABnzbd with priority ordering
+- **Request/approval workflow** -- pending, approved, searching, downloading, completed states with per-request notifications
+- **Scheduled wishlist searches** -- background scheduler auto-searches and downloads wishlist items on a configurable interval
+- **Torrent completion watcher** -- polls download client, auto-imports completed downloads
+- **Dead letter retry** -- failed jobs can be retried individually or in bulk
+
+### Library Management
+
+- **Auto-import pipeline** -- organize files by author/title, rename on import (configurable pattern), scan into Calibre/Audiobookshelf/Kavita/Komga
+- **Series auto-complete** -- detect gaps in series, search for and download missing books
+- **Author monitoring** -- follow authors, periodically check for new releases, auto-notify
+- **Reading history** -- track what you've read with stats (books per month, pages, completion rate)
+- **Tags** -- organize library items with custom tags for filtering and grouping
 - **Series grouping** -- groups related books/volumes in the library view
-- **Wishlist management** -- save searches and track wanted items
-- **Per-source rate limiting** -- avoids bans with configurable circuit breakers
-- **Prometheus metrics** at `/metrics`
-- **CSV bulk import** -- import book lists from CSV files
-- **Modern dark UI** -- Tailwind CSS, responsive, single-page app
-- **Single static binary** -- ~17 MB, zero CGO, pure-Go SQLite (`modernc.org/sqlite`)
+- **EPUB verification** -- checks title word overlap to detect wrong-book downloads
+
+### Notifications and Webhooks
+
+- **In-app notifications** -- persistent alerts for downloads, requests, failures, and author releases
+- **Discord webhooks** -- rich embeds for download events, request updates, and errors
+- **Generic webhooks** -- JSON payloads for any webhook-compatible service
+- **Configurable events** -- choose which events trigger notifications
+
+### Import and Export
+
+- **Goodreads CSV import** -- import your shelves, auto-download "to-read" books
+- **StoryGraph CSV import** -- import your reading list
+- **Library export** -- JSON and CSV export for library, wishlist, and requests
+- **Backup and restore** -- full database backup with one-click restore
+
+### APIs and Integrations
+
+- **Torznab/Newznab API** at `/torznab/api` -- add as indexer in Prowlarr, Readarr, or any compatible app
+- **OPDS 1.2 feed** at `/opds` -- browse and download from e-readers (KOReader, Moon+ Reader, Librera)
+- **Prometheus metrics** at `/metrics` -- request counts, download stats, source health, library size
+- **REST API** -- full JSON API for all operations (see API section below)
+
+### Security and Multi-User
+
+- **Multi-user auth** -- session login with bcrypt passwords and admin/user roles
+- **TOTP 2FA** -- RFC 6238 time-based one-time passwords with QR code setup
+- **OIDC / SSO** -- OpenID Connect for Authelia, Keycloak, Authentik, and others
+- **API key auth** -- `X-Api-Key` header or `?apikey=` parameter for programmatic access
+- **Rate limiting** -- per-endpoint rate limits with configurable thresholds
+- **Security headers** -- X-Content-Type-Options, X-Frame-Options, CORS, request size limits
+
+### UI and Admin
+
+- **Modern dark UI** -- Tailwind CSS, mobile-responsive, single-page app
+- **Admin dashboard** -- library stats, source health, activity log, system info
+- **Bulk operations** -- retry or cancel multiple downloads at once
+- **File uploads** -- drag and drop ebooks/audiobooks, auto-organize and library scan
+- **Connection tests** -- verify Prowlarr, qBittorrent, SABnzbd, Audiobookshelf, Kavita connectivity
+
+### Deployment
+
+- **Single static binary** -- ~17MB, zero CGO, pure-Go SQLite (`modernc.org/sqlite`)
 - **Docker-ready** -- minimal Alpine image, runs as non-root user
+- **Cross-platform** -- Linux, macOS, Windows; amd64, arm64, armv7
 
 ## Search Sources
 
@@ -95,8 +143,9 @@ docker compose up -d
 ### Binary
 
 ```bash
-# Build
-go build -o librarr ./cmd/librarr/
+# Download from releases
+curl -LO https://github.com/JeremiahM37/librarr/releases/latest/download/librarr_linux_amd64.tar.gz
+tar xzf librarr_linux_amd64.tar.gz
 
 # Configure
 export AUTH_USERNAME=admin
@@ -143,7 +192,7 @@ All configuration is via environment variables. Every variable has a sensible de
 | `OIDC_AUTO_CREATE_USERS` | `true` | Auto-create users on first OIDC login |
 | `OIDC_DEFAULT_ROLE` | `user` | Default role for OIDC-created users |
 
-### qBittorrent
+### Download Clients
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -157,11 +206,6 @@ All configuration is via environment variables. Every variable has a sensible de
 | `QB_MANGA_SAVE_PATH` | `/manga-incoming` | Manga download path |
 | `QB_MANGA_CATEGORY` | `manga` | Torrent category for manga |
 | `QB_PRIORITY` | `1` | Download client priority (lower = preferred) |
-
-### SABnzbd (Usenet)
-
-| Variable | Default | Description |
-|----------|---------|-------------|
 | `SABNZBD_URL` | | SABnzbd URL |
 | `SABNZBD_API_KEY` | | SABnzbd API key |
 | `SABNZBD_CATEGORY` | `librarr` | NZB download category |
@@ -228,6 +272,7 @@ All configuration is via environment variables. Every variable has a sensible de
 | `METRICS_ENABLED` | `true` | Prometheus metrics endpoint |
 | `WEBNOVEL_ENABLED` | `true` | Web novel search (requires lncrawl container) |
 | `MANGADEX_ENABLED` | `true` | MangaDex search |
+| `AUTHOR_MONITOR_ENABLED` | `false` | Background author monitoring |
 
 ### Torznab
 
@@ -247,7 +292,7 @@ All configuration is via environment variables. Every variable has a sensible de
 | POST | `/api/logout` | End session |
 | GET | `/api/auth/status` | Current auth state |
 
-### User Management (admin only)
+### User Management (admin)
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -291,12 +336,25 @@ All configuration is via environment variables. Every variable has a sensible de
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/api/library` | List ebooks in library |
-| GET | `/api/library/audiobooks` | List audiobooks in library |
-| GET | `/api/library/manga` | List manga in library |
-| DELETE | `/api/library/book/{id}` | Remove ebook from library |
-| DELETE | `/api/library/audiobook/{id}` | Remove audiobook from library |
+| GET | `/api/library/audiobooks` | List audiobooks |
+| GET | `/api/library/manga` | List manga |
+| DELETE | `/api/library/book/{id}` | Remove ebook |
+| DELETE | `/api/library/audiobook/{id}` | Remove audiobook |
 | GET | `/api/stats` | Library statistics |
 | GET | `/api/activity` | Recent activity log |
+
+### Requests
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/requests` | Create a book request |
+| GET | `/api/requests` | List all requests |
+| GET | `/api/requests/{id}` | Get request details |
+| PUT | `/api/requests/{id}/approve` | Approve request (admin) |
+| PUT | `/api/requests/{id}/cancel` | Cancel request |
+| PUT | `/api/requests/{id}/retry` | Retry failed request (admin) |
+| PUT | `/api/requests/{id}/select` | Select search result (admin) |
+| DELETE | `/api/requests/{id}` | Delete request (admin) |
 
 ### Wishlist
 
@@ -306,17 +364,133 @@ All configuration is via environment variables. Every variable has a sensible de
 | POST | `/api/wishlist` | Add item to wishlist |
 | DELETE | `/api/wishlist/{id}` | Remove from wishlist |
 
-### Configuration
+### Notifications
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/sources` | List search sources and status |
-| GET | `/api/config` | Current configuration summary |
-| GET | `/api/settings` | Get persistent settings |
-| POST | `/api/settings` | Update persistent settings |
-| GET | `/api/check-duplicate` | Check if a book already exists |
+| GET | `/api/notifications` | List notifications |
+| GET | `/api/notifications/unread` | Unread count |
+| PUT | `/api/notifications/{id}/read` | Mark as read |
+| PUT | `/api/notifications/read-all` | Mark all as read |
+| DELETE | `/api/notifications/{id}` | Delete notification |
 
-### Connection Tests
+### Quality Profiles
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/quality-profiles` | List quality profiles |
+| GET | `/api/quality-profiles/default` | Get default profile |
+| POST | `/api/quality-profiles` | Create profile (admin) |
+| PUT | `/api/quality-profiles/{id}` | Update profile (admin) |
+| DELETE | `/api/quality-profiles/{id}` | Delete profile (admin) |
+
+### Release Profiles
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/release-profiles` | List release profiles |
+| POST | `/api/release-profiles` | Create profile (admin) |
+| PUT | `/api/release-profiles/{id}` | Update profile (admin) |
+| DELETE | `/api/release-profiles/{id}` | Delete profile (admin) |
+
+### Blocklist
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/blocklist` | List blocked items |
+| POST | `/api/blocklist` | Add entry (admin) |
+| DELETE | `/api/blocklist/{id}` | Remove entry (admin) |
+| POST | `/api/blocklist/clear` | Clear all (admin) |
+
+### Series
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/series` | List detected series |
+| GET | `/api/series/{name}/missing` | Find missing volumes |
+| POST | `/api/series/{name}/search-missing` | Search for missing volumes |
+
+### Authors
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/authors` | List monitored authors |
+| POST | `/api/authors/monitor` | Add author (admin) |
+| DELETE | `/api/authors/{id}` | Remove author (admin) |
+
+### Reading History
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/history` | Add history entry |
+| GET | `/api/history` | Get reading history |
+| PATCH | `/api/history/{id}` | Update entry |
+| DELETE | `/api/history/{id}` | Delete entry |
+| GET | `/api/history/stats` | Reading statistics |
+
+### Tags
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/tags` | List all tags |
+| POST | `/api/tags` | Create tag |
+| DELETE | `/api/tags/{id}` | Delete tag |
+| GET | `/api/library/{id}/tags` | Get item tags |
+| POST | `/api/library/{id}/tags` | Add tags to item |
+| DELETE | `/api/library/{id}/tags/{tagId}` | Remove tag from item |
+
+### Import / Export
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/import/csv` | Bulk import from CSV |
+| POST | `/api/import/goodreads` | Import Goodreads CSV |
+| POST | `/api/import/storygraph` | Import StoryGraph CSV |
+| POST | `/api/import/library` | Import library JSON |
+| POST | `/api/import/wishlist` | Import wishlist JSON |
+| POST | `/api/import/scan` | Scan directory for files |
+| POST | `/api/import/files` | Import scanned files |
+| GET | `/api/export/library` | Export library as JSON |
+| GET | `/api/export/wishlist` | Export wishlist as JSON |
+| GET | `/api/export/requests` | Export requests as JSON |
+
+### Backup / Restore
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/backup/create` | Create backup |
+| GET | `/api/backup` | Download latest backup |
+| GET | `/api/backup/list` | List backups |
+| POST | `/api/restore` | Restore from backup |
+
+### Scheduler
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/scheduler/status` | Scheduler status and next run |
+| POST | `/api/scheduler/run` | Trigger manual run (admin) |
+| PUT | `/api/scheduler/config` | Update scheduler config (admin) |
+
+### Webhooks (admin)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/webhooks` | List webhook configs |
+| POST | `/api/webhooks` | Create webhook |
+| DELETE | `/api/webhooks/{id}` | Delete webhook |
+| POST | `/api/webhooks/test` | Test webhook delivery |
+
+### Admin
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/admin/dashboard` | Dashboard stats |
+| GET | `/api/admin/activity` | Admin activity log |
+| GET | `/api/admin/health` | Source and system health |
+| POST | `/api/admin/bulk/retry` | Bulk retry downloads |
+| POST | `/api/admin/bulk/cancel` | Bulk cancel downloads |
+
+### Connection Tests (admin)
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -325,12 +499,6 @@ All configuration is via environment variables. Every variable has a sensible de
 | POST | `/api/test/audiobookshelf` | Test Audiobookshelf connection |
 | POST | `/api/test/kavita` | Test Kavita connection |
 | POST | `/api/test/sabnzbd` | Test SABnzbd connection |
-
-### Import
-
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/api/import/csv` | Bulk import books from CSV |
 
 ### System
 
@@ -357,8 +525,6 @@ Librarr exposes a standard Torznab API at `/torznab/api` that can be added as an
 
 Librarr serves an OPDS 1.2 catalog at `/opds` for e-reader apps (KOReader, Moon+ Reader, Librera, etc.).
 
-**Endpoints:**
-
 | Path | Description |
 |------|-------------|
 | `/opds` | Catalog root |
@@ -367,11 +533,7 @@ Librarr serves an OPDS 1.2 catalog at `/opds` for e-reader apps (KOReader, Moon+
 | `/opds/download/{id}` | Download a book file |
 | `/opds/opensearch.xml` | OpenSearch descriptor |
 
-**Setup in your e-reader:**
-
-1. Add a new OPDS catalog
-2. Set the URL to `http://your-librarr-host:5050/opds`
-3. If auth is enabled, enter your Librarr username and password
+**Setup:** Add `http://your-librarr-host:5050/opds` as an OPDS catalog in your e-reader. If auth is enabled, enter your Librarr username and password.
 
 ## Architecture
 
@@ -382,7 +544,7 @@ cmd/librarr/main.go            Entry point
 internal/
   config/config.go              Env var configuration
   db/                           SQLite persistence + migrations
-  models/                       Core types (books, downloads, wishlist)
+  models/                       Core types (books, downloads, wishlist, requests, etc.)
   api/                          HTTP handlers, router, middleware
     auth.go                     Session auth + bcrypt
     totp.go                     TOTP 2FA (RFC 6238)
@@ -390,18 +552,34 @@ internal/
     search.go                   Search endpoint handlers
     download.go                 Download management
     library.go                  Library CRUD
+    requests.go                 Request workflow
+    notifications.go            In-app notifications
+    qualityprofile.go           Quality profiles
+    releaseprofile.go           Release profiles
+    blocklist.go                Blocklist management
+    tags.go                     Tag management
+    history.go                  Reading history
+    series.go                   Series detection + auto-complete
+    importexport.go             Import/export (JSON, CSV, Goodreads, StoryGraph)
+    backup.go                   Database backup/restore
+    webhook.go                  Webhook configuration
     opds.go                     OPDS 1.2 feed
+    admin.go                    Admin dashboard
     metrics.go                  Prometheus metrics
     csv.go                      CSV bulk import
     ratelimit.go                Per-source rate limiting
     router.go                   Route registration
   search/                       Search source implementations
-  download/                     Download manager (qBit + SABnzbd)
+  download/                     Download manager (qBit, Transmission, Deluge, SABnzbd)
   organize/                     Post-download file organization + library import
+  metadata/                     Open Library metadata enrichment
+  scheduler/                    Background scheduler, series detector, author monitor
+  webhook/                      Webhook sender (Discord + generic)
   torznab/                      Torznab/Newznab API handler
 web/
   index.html                    Single-page web UI (Tailwind CSS)
 Dockerfile                      Multi-stage Alpine build
+.goreleaser.yml                 Cross-platform release builds
 ```
 
 ## License

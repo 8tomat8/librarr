@@ -24,7 +24,7 @@ func main() {
 		Level: slog.LevelInfo,
 	})))
 
-	slog.Info("starting Librarr", "version", "2.0.0")
+	slog.Info("starting Librarr", "version", "1.0.0")
 
 	// Load configuration.
 	cfg := config.Load()

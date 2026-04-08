@@ -34,7 +34,7 @@ func (s *Server) handleExportLibrary(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Disposition", "attachment; filename=librarr-library.json")
 	writeJSON(w, http.StatusOK, ExportEnvelope{
-		Version:    "2.0.0",
+		Version:    "1.0.0",
 		ExportedAt: time.Now().UTC().Format(time.RFC3339),
 		ItemCount:  len(items),
 		Items:      items,
@@ -56,7 +56,7 @@ func (s *Server) handleExportWishlist(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Disposition", "attachment; filename=librarr-wishlist.json")
 	writeJSON(w, http.StatusOK, ExportEnvelope{
-		Version:    "2.0.0",
+		Version:    "1.0.0",
 		ExportedAt: time.Now().UTC().Format(time.RFC3339),
 		ItemCount:  len(items),
 		Items:      items,
@@ -78,7 +78,7 @@ func (s *Server) handleExportRequests(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Disposition", "attachment; filename=librarr-requests.json")
 	writeJSON(w, http.StatusOK, ExportEnvelope{
-		Version:    "2.0.0",
+		Version:    "1.0.0",
 		ExportedAt: time.Now().UTC().Format(time.RFC3339),
 		ItemCount:  len(requests),
 		Items:      requests,
