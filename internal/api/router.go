@@ -41,6 +41,7 @@ type Server struct {
 	webhookSender  *webhook.Sender
 	scheduler      *scheduler.Scheduler
 	seriesDetector *scheduler.SeriesDetector
+	authorMonitor  *scheduler.AuthorMonitor
 }
 
 // NewServer creates the HTTP API server.
@@ -85,9 +86,10 @@ func NewServer(cfg *config.Config, database *db.DB, searchMgr *search.Manager, d
 	// Wire webhook sender into download manager.
 	downloadMgr.SetWebhookSender(ws)
 
-	// Initialize scheduler and series detector.
+	// Initialize scheduler, series detector, and author monitor.
 	sched := scheduler.NewScheduler(cfg, database, searchMgr, downloadMgr, ws)
 	seriesDet := scheduler.NewSeriesDetector(database, searchMgr, ws)
+	authorMon := scheduler.NewAuthorMonitor(cfg, database, ws)
 
 	s := &Server{
 		cfg:            cfg,
@@ -105,6 +107,7 @@ func NewServer(cfg *config.Config, database *db.DB, searchMgr *search.Manager, d
 		webhookSender:  ws,
 		scheduler:      sched,
 		seriesDetector: seriesDet,
+		authorMonitor:  authorMon,
 	}
 
 	// Initialize OIDC handler if configured.
@@ -127,8 +130,36 @@ func NewServer(cfg *config.Config, database *db.DB, searchMgr *search.Manager, d
 
 // StartScheduler starts the background scheduler loop.
 func (s *Server) StartScheduler(ctx context.Context) {
+	// Start author monitor in a separate goroutine.
+	if s.authorMonitor != nil && s.cfg.AuthorMonitorEnabled {
+		go s.runAuthorMonitorLoop(ctx)
+	}
+	// Scheduler.Start blocks until ctx is cancelled.
 	if s.scheduler != nil {
 		s.scheduler.Start(ctx)
+	}
+}
+
+// runAuthorMonitorLoop runs the author monitor on its configured interval.
+func (s *Server) runAuthorMonitorLoop(ctx context.Context) {
+	interval := time.Duration(s.cfg.AuthorCheckIntervalDays) * 24 * time.Hour
+	if interval < time.Hour {
+		interval = 7 * 24 * time.Hour
+	}
+
+	slog.Info("author monitor started", "interval", interval)
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			slog.Info("author monitor stopped")
+			return
+		case <-ticker.C:
+			s.authorMonitor.CheckAuthors()
+		}
 	}
 }
 
@@ -305,6 +336,52 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/series", s.handleListSeries)
 	s.mux.HandleFunc("GET /api/series/{name}/missing", s.handleSeriesMissing)
 	s.mux.HandleFunc("POST /api/series/{name}/search-missing", s.handleSearchMissingSeries)
+
+	// Quality Profiles.
+	s.mux.HandleFunc("GET /api/quality-profiles", s.handleGetQualityProfiles)
+	s.mux.HandleFunc("GET /api/quality-profiles/default", s.handleGetDefaultQualityProfile)
+	s.mux.HandleFunc("POST /api/quality-profiles", requireAdmin(s.handleCreateQualityProfile))
+	s.mux.HandleFunc("PUT /api/quality-profiles/{id}", requireAdmin(s.handleUpdateQualityProfile))
+	s.mux.HandleFunc("DELETE /api/quality-profiles/{id}", requireAdmin(s.handleDeleteQualityProfile))
+
+	// Blocklist.
+	s.mux.HandleFunc("GET /api/blocklist", s.handleGetBlocklist)
+	s.mux.HandleFunc("POST /api/blocklist", requireAdmin(s.handleAddBlocklistEntry))
+	s.mux.HandleFunc("DELETE /api/blocklist/{id}", requireAdmin(s.handleDeleteBlocklistEntry))
+	s.mux.HandleFunc("POST /api/blocklist/clear", requireAdmin(s.handleClearBlocklist))
+
+	// Release Profiles.
+	s.mux.HandleFunc("GET /api/release-profiles", s.handleGetReleaseProfiles)
+	s.mux.HandleFunc("POST /api/release-profiles", requireAdmin(s.handleCreateReleaseProfile))
+	s.mux.HandleFunc("PUT /api/release-profiles/{id}", requireAdmin(s.handleUpdateReleaseProfile))
+	s.mux.HandleFunc("DELETE /api/release-profiles/{id}", requireAdmin(s.handleDeleteReleaseProfile))
+
+	// Manual Import.
+	s.mux.HandleFunc("POST /api/import/scan", requireAdmin(s.handleScanImport))
+	s.mux.HandleFunc("POST /api/import/files", requireAdmin(s.handleImportFiles))
+
+	// Tags.
+	s.mux.HandleFunc("GET /api/tags", s.handleGetTags)
+	s.mux.HandleFunc("POST /api/tags", s.handleCreateTag)
+	s.mux.HandleFunc("DELETE /api/tags/{id}", s.handleDeleteTag)
+	s.mux.HandleFunc("GET /api/library/{id}/tags", s.handleGetItemTags)
+	s.mux.HandleFunc("POST /api/library/{id}/tags", s.handleAddItemTags)
+	s.mux.HandleFunc("DELETE /api/library/{id}/tags/{tagId}", s.handleRemoveItemTag)
+
+	// Backup/Restore.
+	s.mux.HandleFunc("GET /api/backup", requireAdmin(s.handleDownloadBackup))
+	s.mux.HandleFunc("POST /api/backup/create", requireAdmin(s.handleCreateBackup))
+	s.mux.HandleFunc("GET /api/backup/list", requireAdmin(s.handleListBackups))
+	s.mux.HandleFunc("POST /api/restore", requireAdmin(s.handleRestore))
+
+	// Author Monitoring.
+	s.mux.HandleFunc("GET /api/authors", s.handleListMonitoredAuthors)
+	s.mux.HandleFunc("POST /api/authors/monitor", requireAdmin(s.handleAddMonitoredAuthor))
+	s.mux.HandleFunc("DELETE /api/authors/{id}", requireAdmin(s.handleDeleteMonitoredAuthor))
+
+	// Goodreads / StoryGraph CSV Import.
+	s.mux.HandleFunc("POST /api/import/goodreads", requireAdmin(s.handleImportGoodreads))
+	s.mux.HandleFunc("POST /api/import/storygraph", requireAdmin(s.handleImportStoryGraph))
 
 	// Torznab API.
 	torznabHandler := torznab.NewHandler(s.cfg, s.searchMgr)

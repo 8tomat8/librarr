@@ -135,6 +135,17 @@ type Config struct {
 	SchedulerIntervalHours int
 	SchedulerAutoDownload  bool
 	SchedulerMinScore      int
+
+	// Quality Profiles
+	AutoUpgradeEnabled bool
+
+	// Rename on Import
+	RenameEnabled bool
+	RenamePattern string
+
+	// Author Monitoring
+	AuthorMonitorEnabled      bool
+	AuthorCheckIntervalDays   int
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -243,6 +254,14 @@ func Load() *Config {
 		SchedulerIntervalHours: getEnvInt("SCHEDULER_INTERVAL_HOURS", 24),
 		SchedulerAutoDownload:  getEnvBool("SCHEDULER_AUTO_DOWNLOAD", false),
 		SchedulerMinScore:      getEnvInt("SCHEDULER_MIN_SCORE", 70),
+
+		AutoUpgradeEnabled: getEnvBool("AUTO_UPGRADE_ENABLED", false),
+
+		RenameEnabled: getEnvBool("RENAME_ENABLED", false),
+		RenamePattern: getEnv("RENAME_PATTERN", "{author} - {title} ({year}).{ext}"),
+
+		AuthorMonitorEnabled:    getEnvBool("AUTHOR_MONITOR_ENABLED", false),
+		AuthorCheckIntervalDays: getEnvInt("AUTHOR_CHECK_INTERVAL_DAYS", 7),
 	}
 }
 

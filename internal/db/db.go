@@ -229,10 +229,69 @@ func (d *DB) migrate() error {
 		last_checked REAL NOT NULL DEFAULT (strftime('%s','now'))
 	)`)
 
+	// Quality profiles table.
+	migrations = append(migrations, `CREATE TABLE IF NOT EXISTS quality_profiles (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL DEFAULT '',
+		format_ranking TEXT NOT NULL DEFAULT '[]',
+		preferred_size_min INTEGER NOT NULL DEFAULT 0,
+		preferred_size_max INTEGER NOT NULL DEFAULT 0,
+		upgrade_allowed INTEGER NOT NULL DEFAULT 0,
+		cutoff_format TEXT NOT NULL DEFAULT ''
+	)`)
+
+	// Blocklist table.
+	migrations = append(migrations, `CREATE TABLE IF NOT EXISTS blocklist (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		title TEXT NOT NULL DEFAULT '',
+		source TEXT NOT NULL DEFAULT '',
+		download_url TEXT NOT NULL DEFAULT '',
+		info_hash TEXT NOT NULL DEFAULT '',
+		reason TEXT NOT NULL DEFAULT '',
+		created_at REAL NOT NULL DEFAULT (strftime('%s','now'))
+	)`)
+	migrations = append(migrations, `CREATE INDEX IF NOT EXISTS idx_blocklist_info_hash ON blocklist(info_hash)`)
+	migrations = append(migrations, `CREATE INDEX IF NOT EXISTS idx_blocklist_download_url ON blocklist(download_url)`)
+
+	// Release profiles table.
+	migrations = append(migrations, `CREATE TABLE IF NOT EXISTS release_profiles (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL DEFAULT '',
+		must_contain TEXT NOT NULL DEFAULT '[]',
+		must_not_contain TEXT NOT NULL DEFAULT '[]',
+		preferred TEXT NOT NULL DEFAULT '[]',
+		enabled INTEGER NOT NULL DEFAULT 1
+	)`)
+
+	// Tags tables.
+	migrations = append(migrations, `CREATE TABLE IF NOT EXISTS tags (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL UNIQUE,
+		color TEXT NOT NULL DEFAULT '#6366f1'
+	)`)
+	migrations = append(migrations, `CREATE TABLE IF NOT EXISTS item_tags (
+		item_id INTEGER NOT NULL,
+		tag_id INTEGER NOT NULL,
+		PRIMARY KEY (item_id, tag_id),
+		FOREIGN KEY (item_id) REFERENCES library_items(id) ON DELETE CASCADE,
+		FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
+	)`)
+	migrations = append(migrations, `CREATE INDEX IF NOT EXISTS idx_item_tags_tag ON item_tags(tag_id)`)
+
+	// Monitored authors table.
+	migrations = append(migrations, `CREATE TABLE IF NOT EXISTS monitored_authors (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL DEFAULT '',
+		last_checked REAL NOT NULL DEFAULT 0,
+		last_book_found TEXT NOT NULL DEFAULT '',
+		check_interval_days INTEGER NOT NULL DEFAULT 7
+	)`)
+
 	// Additive migrations — add columns that may not exist yet.
 	addColumns := []string{
 		`ALTER TABLE download_jobs ADD COLUMN status_history TEXT NOT NULL DEFAULT '[]'`,
 		`ALTER TABLE activity_log ADD COLUMN user TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE reading_history ADD COLUMN status TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, stmt := range addColumns {
 		// Ignore "duplicate column" errors.
@@ -1558,6 +1617,456 @@ func (d *DB) GetSeriesTracking() ([]map[string]interface{}, error) {
 		})
 	}
 	return result, nil
+}
+
+// --- Quality Profiles ---
+
+// QualityProfile represents a quality profile record.
+type QualityProfile struct {
+	ID               int64    `json:"id"`
+	Name             string   `json:"name"`
+	FormatRanking    []string `json:"format_ranking"`
+	PreferredSizeMin int64    `json:"preferred_size_min"`
+	PreferredSizeMax int64    `json:"preferred_size_max"`
+	UpgradeAllowed   bool     `json:"upgrade_allowed"`
+	CutoffFormat     string   `json:"cutoff_format"`
+}
+
+func (d *DB) CreateQualityProfile(qp *QualityProfile) (int64, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	rankingJSON, _ := json.Marshal(qp.FormatRanking)
+	result, err := d.db.Exec(
+		`INSERT INTO quality_profiles (name, format_ranking, preferred_size_min, preferred_size_max, upgrade_allowed, cutoff_format)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		qp.Name, string(rankingJSON), qp.PreferredSizeMin, qp.PreferredSizeMax, boolToInt(qp.UpgradeAllowed), qp.CutoffFormat,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.LastInsertId()
+}
+
+func (d *DB) GetQualityProfiles() ([]QualityProfile, error) {
+	rows, err := d.db.Query("SELECT id, name, format_ranking, preferred_size_min, preferred_size_max, upgrade_allowed, cutoff_format FROM quality_profiles ORDER BY id")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var profiles []QualityProfile
+	for rows.Next() {
+		var qp QualityProfile
+		var rankJSON string
+		var upgrade int
+		if err := rows.Scan(&qp.ID, &qp.Name, &rankJSON, &qp.PreferredSizeMin, &qp.PreferredSizeMax, &upgrade, &qp.CutoffFormat); err != nil {
+			continue
+		}
+		json.Unmarshal([]byte(rankJSON), &qp.FormatRanking)
+		qp.UpgradeAllowed = upgrade != 0
+		profiles = append(profiles, qp)
+	}
+	return profiles, nil
+}
+
+func (d *DB) GetQualityProfile(id int64) (*QualityProfile, error) {
+	var qp QualityProfile
+	var rankJSON string
+	var upgrade int
+	err := d.db.QueryRow(
+		"SELECT id, name, format_ranking, preferred_size_min, preferred_size_max, upgrade_allowed, cutoff_format FROM quality_profiles WHERE id = ?", id,
+	).Scan(&qp.ID, &qp.Name, &rankJSON, &qp.PreferredSizeMin, &qp.PreferredSizeMax, &upgrade, &qp.CutoffFormat)
+	if err != nil {
+		return nil, err
+	}
+	json.Unmarshal([]byte(rankJSON), &qp.FormatRanking)
+	qp.UpgradeAllowed = upgrade != 0
+	return &qp, nil
+}
+
+func (d *DB) UpdateQualityProfile(qp *QualityProfile) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	rankingJSON, _ := json.Marshal(qp.FormatRanking)
+	_, err := d.db.Exec(
+		`UPDATE quality_profiles SET name=?, format_ranking=?, preferred_size_min=?, preferred_size_max=?, upgrade_allowed=?, cutoff_format=? WHERE id=?`,
+		qp.Name, string(rankingJSON), qp.PreferredSizeMin, qp.PreferredSizeMax, boolToInt(qp.UpgradeAllowed), qp.CutoffFormat, qp.ID,
+	)
+	return err
+}
+
+func (d *DB) DeleteQualityProfile(id int64) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	result, err := d.db.Exec("DELETE FROM quality_profiles WHERE id = ?", id)
+	if err != nil {
+		return err
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("quality profile not found")
+	}
+	return nil
+}
+
+// --- Blocklist ---
+
+// BlocklistEntry represents a blocklisted download.
+type BlocklistEntry struct {
+	ID          int64     `json:"id"`
+	Title       string    `json:"title"`
+	Source      string    `json:"source"`
+	DownloadURL string    `json:"download_url"`
+	InfoHash    string    `json:"info_hash"`
+	Reason      string    `json:"reason"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+func (d *DB) AddBlocklistEntry(title, source, downloadURL, infoHash, reason string) (int64, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	result, err := d.db.Exec(
+		`INSERT INTO blocklist (title, source, download_url, info_hash, reason) VALUES (?, ?, ?, ?, ?)`,
+		title, source, downloadURL, infoHash, reason,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.LastInsertId()
+}
+
+func (d *DB) GetBlocklist(limit, offset int) ([]BlocklistEntry, error) {
+	rows, err := d.db.Query(
+		"SELECT id, title, source, download_url, info_hash, reason, created_at FROM blocklist ORDER BY created_at DESC LIMIT ? OFFSET ?",
+		limit, offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var entries []BlocklistEntry
+	for rows.Next() {
+		var e BlocklistEntry
+		var ts float64
+		if err := rows.Scan(&e.ID, &e.Title, &e.Source, &e.DownloadURL, &e.InfoHash, &e.Reason, &ts); err != nil {
+			continue
+		}
+		e.CreatedAt = time.Unix(int64(ts), 0)
+		entries = append(entries, e)
+	}
+	return entries, nil
+}
+
+func (d *DB) DeleteBlocklistEntry(id int64) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	result, err := d.db.Exec("DELETE FROM blocklist WHERE id = ?", id)
+	if err != nil {
+		return err
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("blocklist entry not found")
+	}
+	return nil
+}
+
+func (d *DB) ClearBlocklist() error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	_, err := d.db.Exec("DELETE FROM blocklist")
+	return err
+}
+
+func (d *DB) IsBlocklisted(downloadURL, infoHash string) bool {
+	if downloadURL != "" {
+		var exists int
+		if err := d.db.QueryRow("SELECT 1 FROM blocklist WHERE download_url = ?", downloadURL).Scan(&exists); err == nil {
+			return true
+		}
+	}
+	if infoHash != "" {
+		var exists int
+		if err := d.db.QueryRow("SELECT 1 FROM blocklist WHERE info_hash = ?", infoHash).Scan(&exists); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// --- Release Profiles ---
+
+// PreferredWord represents a word+score pair in a release profile.
+type PreferredWord struct {
+	Word  string `json:"word"`
+	Score int    `json:"score"`
+}
+
+// ReleaseProfile represents a release profile record.
+type ReleaseProfile struct {
+	ID             int64           `json:"id"`
+	Name           string          `json:"name"`
+	MustContain    []string        `json:"must_contain"`
+	MustNotContain []string        `json:"must_not_contain"`
+	Preferred      []PreferredWord `json:"preferred"`
+	Enabled        bool            `json:"enabled"`
+}
+
+func (d *DB) CreateReleaseProfile(rp *ReleaseProfile) (int64, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	mcJSON, _ := json.Marshal(rp.MustContain)
+	mncJSON, _ := json.Marshal(rp.MustNotContain)
+	prefJSON, _ := json.Marshal(rp.Preferred)
+	result, err := d.db.Exec(
+		`INSERT INTO release_profiles (name, must_contain, must_not_contain, preferred, enabled) VALUES (?, ?, ?, ?, ?)`,
+		rp.Name, string(mcJSON), string(mncJSON), string(prefJSON), boolToInt(rp.Enabled),
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.LastInsertId()
+}
+
+func (d *DB) GetReleaseProfiles() ([]ReleaseProfile, error) {
+	rows, err := d.db.Query("SELECT id, name, must_contain, must_not_contain, preferred, enabled FROM release_profiles ORDER BY id")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var profiles []ReleaseProfile
+	for rows.Next() {
+		var rp ReleaseProfile
+		var mcJSON, mncJSON, prefJSON string
+		var enabled int
+		if err := rows.Scan(&rp.ID, &rp.Name, &mcJSON, &mncJSON, &prefJSON, &enabled); err != nil {
+			continue
+		}
+		json.Unmarshal([]byte(mcJSON), &rp.MustContain)
+		json.Unmarshal([]byte(mncJSON), &rp.MustNotContain)
+		json.Unmarshal([]byte(prefJSON), &rp.Preferred)
+		rp.Enabled = enabled != 0
+		profiles = append(profiles, rp)
+	}
+	return profiles, nil
+}
+
+func (d *DB) GetReleaseProfile(id int64) (*ReleaseProfile, error) {
+	var rp ReleaseProfile
+	var mcJSON, mncJSON, prefJSON string
+	var enabled int
+	err := d.db.QueryRow(
+		"SELECT id, name, must_contain, must_not_contain, preferred, enabled FROM release_profiles WHERE id = ?", id,
+	).Scan(&rp.ID, &rp.Name, &mcJSON, &mncJSON, &prefJSON, &enabled)
+	if err != nil {
+		return nil, err
+	}
+	json.Unmarshal([]byte(mcJSON), &rp.MustContain)
+	json.Unmarshal([]byte(mncJSON), &rp.MustNotContain)
+	json.Unmarshal([]byte(prefJSON), &rp.Preferred)
+	rp.Enabled = enabled != 0
+	return &rp, nil
+}
+
+func (d *DB) UpdateReleaseProfile(rp *ReleaseProfile) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	mcJSON, _ := json.Marshal(rp.MustContain)
+	mncJSON, _ := json.Marshal(rp.MustNotContain)
+	prefJSON, _ := json.Marshal(rp.Preferred)
+	_, err := d.db.Exec(
+		`UPDATE release_profiles SET name=?, must_contain=?, must_not_contain=?, preferred=?, enabled=? WHERE id=?`,
+		rp.Name, string(mcJSON), string(mncJSON), string(prefJSON), boolToInt(rp.Enabled), rp.ID,
+	)
+	return err
+}
+
+func (d *DB) DeleteReleaseProfile(id int64) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	result, err := d.db.Exec("DELETE FROM release_profiles WHERE id = ?", id)
+	if err != nil {
+		return err
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("release profile not found")
+	}
+	return nil
+}
+
+// --- Tags ---
+
+// Tag represents a tag record.
+type Tag struct {
+	ID    int64  `json:"id"`
+	Name  string `json:"name"`
+	Color string `json:"color"`
+}
+
+func (d *DB) CreateTag(name, color string) (int64, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	result, err := d.db.Exec("INSERT INTO tags (name, color) VALUES (?, ?)", name, color)
+	if err != nil {
+		return 0, err
+	}
+	return result.LastInsertId()
+}
+
+func (d *DB) GetTags() ([]Tag, error) {
+	rows, err := d.db.Query("SELECT id, name, color FROM tags ORDER BY name")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var tags []Tag
+	for rows.Next() {
+		var t Tag
+		if err := rows.Scan(&t.ID, &t.Name, &t.Color); err != nil {
+			continue
+		}
+		tags = append(tags, t)
+	}
+	return tags, nil
+}
+
+func (d *DB) DeleteTag(id int64) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	// Delete tag assignments first.
+	d.db.Exec("DELETE FROM item_tags WHERE tag_id = ?", id)
+	result, err := d.db.Exec("DELETE FROM tags WHERE id = ?", id)
+	if err != nil {
+		return err
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("tag not found")
+	}
+	return nil
+}
+
+func (d *DB) AddItemTag(itemID, tagID int64) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	_, err := d.db.Exec("INSERT OR IGNORE INTO item_tags (item_id, tag_id) VALUES (?, ?)", itemID, tagID)
+	return err
+}
+
+func (d *DB) RemoveItemTag(itemID, tagID int64) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	_, err := d.db.Exec("DELETE FROM item_tags WHERE item_id = ? AND tag_id = ?", itemID, tagID)
+	return err
+}
+
+func (d *DB) GetItemTags(itemID int64) ([]Tag, error) {
+	rows, err := d.db.Query(
+		"SELECT t.id, t.name, t.color FROM tags t JOIN item_tags it ON t.id = it.tag_id WHERE it.item_id = ? ORDER BY t.name",
+		itemID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var tags []Tag
+	for rows.Next() {
+		var t Tag
+		if err := rows.Scan(&t.ID, &t.Name, &t.Color); err != nil {
+			continue
+		}
+		tags = append(tags, t)
+	}
+	return tags, nil
+}
+
+func (d *DB) GetItemsByTag(tagID int64, limit, offset int) ([]models.LibraryItem, error) {
+	rows, err := d.db.Query(
+		`SELECT li.id, li.title, li.author, li.file_path, li.original_path, li.file_size, li.file_format,
+		        li.media_type, li.source, li.source_id, li.metadata, li.added_at
+		 FROM library_items li JOIN item_tags it ON li.id = it.item_id
+		 WHERE it.tag_id = ? ORDER BY li.added_at DESC LIMIT ? OFFSET ?`,
+		tagID, limit, offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanLibraryItems(rows)
+}
+
+// --- Monitored Authors ---
+
+// MonitoredAuthor represents a monitored author record.
+type MonitoredAuthor struct {
+	ID                int64     `json:"id"`
+	Name              string    `json:"name"`
+	LastChecked       time.Time `json:"last_checked"`
+	LastBookFound     string    `json:"last_book_found"`
+	CheckIntervalDays int       `json:"check_interval_days"`
+}
+
+func (d *DB) AddMonitoredAuthor(name string, intervalDays int) (int64, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	result, err := d.db.Exec(
+		"INSERT INTO monitored_authors (name, check_interval_days) VALUES (?, ?)",
+		name, intervalDays,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.LastInsertId()
+}
+
+func (d *DB) GetMonitoredAuthors() ([]MonitoredAuthor, error) {
+	rows, err := d.db.Query("SELECT id, name, last_checked, last_book_found, check_interval_days FROM monitored_authors ORDER BY name")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var authors []MonitoredAuthor
+	for rows.Next() {
+		var a MonitoredAuthor
+		var lastChecked float64
+		if err := rows.Scan(&a.ID, &a.Name, &lastChecked, &a.LastBookFound, &a.CheckIntervalDays); err != nil {
+			continue
+		}
+		if lastChecked > 0 {
+			a.LastChecked = time.Unix(int64(lastChecked), 0)
+		}
+		authors = append(authors, a)
+	}
+	return authors, nil
+}
+
+func (d *DB) DeleteMonitoredAuthor(id int64) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	result, err := d.db.Exec("DELETE FROM monitored_authors WHERE id = ?", id)
+	if err != nil {
+		return err
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("monitored author not found")
+	}
+	return nil
+}
+
+func (d *DB) UpdateMonitoredAuthorCheck(id int64, lastBookFound string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	_, err := d.db.Exec(
+		"UPDATE monitored_authors SET last_checked = ?, last_book_found = ? WHERE id = ?",
+		float64(time.Now().Unix()), lastBookFound, id,
+	)
+	return err
+}
+
+// GetDBPath returns the file path to the database.
+func (d *DB) GetDBPath() string {
+	return d.path
 }
 
 // ItemToJSON converts a LibraryItem to a JSON-friendly map.

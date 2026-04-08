@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/JeremiahM37/librarr/internal/db"
@@ -23,6 +24,43 @@ func (s *Server) handleLibrary(w http.ResponseWriter, r *http.Request) {
 	mediaType := r.URL.Query().Get("type")
 	limit := queryInt(r, "limit", 50)
 	offset := queryInt(r, "offset", 0)
+	tagFilter := r.URL.Query().Get("tag")
+
+	// If filtering by tag name, look up tag ID and use tag-based query.
+	if tagFilter != "" {
+		tags, _ := s.db.GetTags()
+		var tagID int64
+		for _, t := range tags {
+			if strings.EqualFold(t.Name, tagFilter) {
+				tagID = t.ID
+				break
+			}
+		}
+		if tagID > 0 {
+			tagItems, err := s.db.GetItemsByTag(tagID, limit, offset)
+			if err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+					"error": err.Error(),
+				})
+				return
+			}
+			var tagJsonItems []map[string]interface{}
+			for _, item := range tagItems {
+				tagJsonItems = append(tagJsonItems, db.ItemToJSON(item))
+			}
+			if tagJsonItems == nil {
+				tagJsonItems = []map[string]interface{}{}
+			}
+			writeJSON(w, http.StatusOK, map[string]interface{}{
+				"items":  tagJsonItems,
+				"total":  len(tagJsonItems),
+				"limit":  limit,
+				"offset": offset,
+				"tag":    tagFilter,
+			})
+			return
+		}
+	}
 
 	items, err := s.db.GetItems(mediaType, limit, offset)
 	if err != nil {
