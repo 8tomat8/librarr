@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -11,8 +12,10 @@ import (
 	"github.com/JeremiahM37/librarr/internal/download"
 	"github.com/JeremiahM37/librarr/internal/metadata"
 	"github.com/JeremiahM37/librarr/internal/organize"
+	"github.com/JeremiahM37/librarr/internal/scheduler"
 	"github.com/JeremiahM37/librarr/internal/search"
 	"github.com/JeremiahM37/librarr/internal/torznab"
+	"github.com/JeremiahM37/librarr/internal/webhook"
 	"github.com/JeremiahM37/librarr/web"
 )
 
@@ -35,11 +38,56 @@ type Server struct {
 	metadataClient *metadata.Client
 	organizer      *organize.Organizer
 	targets        *organize.LibraryTargets
+	webhookSender  *webhook.Sender
+	scheduler      *scheduler.Scheduler
+	seriesDetector *scheduler.SeriesDetector
 }
 
 // NewServer creates the HTTP API server.
 func NewServer(cfg *config.Config, database *db.DB, searchMgr *search.Manager, downloadMgr *download.Manager, qb *download.QBittorrentClient, sab *download.SABnzbdClient, organizer *organize.Organizer, targets *organize.LibraryTargets) *Server {
 	sessions := NewSessionStore()
+
+	// Initialize webhook sender.
+	ws := webhook.NewSender()
+	// Load webhook configs from DB.
+	if configs, err := database.GetWebhookConfigs(); err == nil {
+		ws.SetConfigs(configs)
+	}
+	// If env-based webhook is set, add it as a default.
+	if cfg.WebhookURL != "" {
+		envConfig := webhook.Config{
+			Name:    "Default (" + cfg.WebhookType + ")",
+			URL:     cfg.WebhookURL,
+			Type:    cfg.WebhookType,
+			Enabled: true,
+			Events:  "*",
+		}
+		// Only add if not already in DB configs.
+		existing, _ := database.GetWebhookConfigs()
+		found := false
+		for _, c := range existing {
+			if c.URL == cfg.WebhookURL {
+				found = true
+				break
+			}
+		}
+		if !found {
+			id, err := database.CreateWebhookConfig(&envConfig)
+			if err == nil {
+				envConfig.ID = id
+				configs := ws.GetConfigs()
+				configs = append(configs, envConfig)
+				ws.SetConfigs(configs)
+			}
+		}
+	}
+
+	// Wire webhook sender into download manager.
+	downloadMgr.SetWebhookSender(ws)
+
+	// Initialize scheduler and series detector.
+	sched := scheduler.NewScheduler(cfg, database, searchMgr, downloadMgr, ws)
+	seriesDet := scheduler.NewSeriesDetector(database, searchMgr, ws)
 
 	s := &Server{
 		cfg:            cfg,
@@ -54,6 +102,9 @@ func NewServer(cfg *config.Config, database *db.DB, searchMgr *search.Manager, d
 		metadataClient: metadata.NewClient(&http.Client{Timeout: 15 * time.Second}),
 		organizer:      organizer,
 		targets:        targets,
+		webhookSender:  ws,
+		scheduler:      sched,
+		seriesDetector: seriesDet,
 	}
 
 	// Initialize OIDC handler if configured.
@@ -72,6 +123,13 @@ func NewServer(cfg *config.Config, database *db.DB, searchMgr *search.Manager, d
 
 	s.registerRoutes()
 	return s
+}
+
+// StartScheduler starts the background scheduler loop.
+func (s *Server) StartScheduler(ctx context.Context) {
+	if s.scheduler != nil {
+		s.scheduler.Start(ctx)
+	}
 }
 
 // Handler returns the HTTP handler with middleware.
@@ -216,6 +274,37 @@ func (s *Server) registerRoutes() {
 	// File upload.
 	s.mux.HandleFunc("POST /api/upload", s.handleUpload)
 	s.mux.HandleFunc("GET /api/uploads", s.handleListUploads)
+
+	// Webhooks (admin only).
+	s.mux.HandleFunc("GET /api/webhooks", requireAdmin(s.handleGetWebhooks))
+	s.mux.HandleFunc("POST /api/webhooks", requireAdmin(s.handleCreateWebhook))
+	s.mux.HandleFunc("DELETE /api/webhooks/{id}", requireAdmin(s.handleDeleteWebhook))
+	s.mux.HandleFunc("POST /api/webhooks/test", requireAdmin(s.handleTestWebhook))
+
+	// Import/Export.
+	s.mux.HandleFunc("GET /api/export/library", s.handleExportLibrary)
+	s.mux.HandleFunc("GET /api/export/wishlist", s.handleExportWishlist)
+	s.mux.HandleFunc("GET /api/export/requests", s.handleExportRequests)
+	s.mux.HandleFunc("POST /api/import/library", requireAdmin(s.handleImportLibrary))
+	s.mux.HandleFunc("POST /api/import/wishlist", requireAdmin(s.handleImportWishlist))
+	s.mux.HandleFunc("POST /api/import/csvdata", requireAdmin(s.handleImportCSVData))
+
+	// Scheduler.
+	s.mux.HandleFunc("GET /api/scheduler/status", s.handleSchedulerStatus)
+	s.mux.HandleFunc("POST /api/scheduler/run", requireAdmin(s.handleSchedulerRun))
+	s.mux.HandleFunc("PUT /api/scheduler/config", requireAdmin(s.handleSchedulerConfig))
+
+	// Reading history.
+	s.mux.HandleFunc("POST /api/history", s.handleAddHistory)
+	s.mux.HandleFunc("GET /api/history", s.handleGetHistory)
+	s.mux.HandleFunc("PATCH /api/history/{id}", s.handleUpdateHistory)
+	s.mux.HandleFunc("DELETE /api/history/{id}", s.handleDeleteHistory)
+	s.mux.HandleFunc("GET /api/history/stats", s.handleHistoryStats)
+
+	// Series auto-complete.
+	s.mux.HandleFunc("GET /api/series", s.handleListSeries)
+	s.mux.HandleFunc("GET /api/series/{name}/missing", s.handleSeriesMissing)
+	s.mux.HandleFunc("POST /api/series/{name}/search-missing", s.handleSearchMissingSeries)
 
 	// Torznab API.
 	torznabHandler := torznab.NewHandler(s.cfg, s.searchMgr)

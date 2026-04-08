@@ -107,8 +107,11 @@ func main() {
 	scanner := organize.NewAudiobookScanner(cfg, database, targets)
 	go scanner.Start(ctx)
 
-	// Create HTTP server.
+	// Create HTTP server (also initializes webhook sender, scheduler, series detector).
 	server := api.NewServer(cfg, database, searchMgr, downloadMgr, qb, sab, organizer, targets)
+
+	// Start scheduled search goroutine.
+	go server.StartScheduler(ctx)
 
 	httpServer := &http.Server{
 		Addr:         fmt.Sprintf(":%d", cfg.Port),

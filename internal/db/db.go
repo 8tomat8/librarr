@@ -12,9 +12,25 @@ import (
 	"time"
 
 	"github.com/JeremiahM37/librarr/internal/models"
+	"github.com/JeremiahM37/librarr/internal/webhook"
 
 	_ "modernc.org/sqlite"
 )
+
+// ReadingHistoryEntry represents a reading history record.
+type ReadingHistoryEntry struct {
+	ID            int64      `json:"id"`
+	UserID        int64      `json:"user_id"`
+	BookTitle     string     `json:"book_title"`
+	Author        string     `json:"author"`
+	Format        string     `json:"format"`
+	StartedAt     *time.Time `json:"started_at,omitempty"`
+	FinishedAt    *time.Time `json:"finished_at,omitempty"`
+	Rating        *int       `json:"rating,omitempty"`
+	Notes         string     `json:"notes"`
+	LibraryItemID *int64     `json:"library_item_id,omitempty"`
+	Status        string     `json:"status"`
+}
 
 // DB wraps a SQLite database for library tracking and download jobs.
 type DB struct {
@@ -177,6 +193,41 @@ func (d *DB) migrate() error {
 		created_at REAL NOT NULL DEFAULT (strftime('%s','now'))
 	)`)
 	migrations = append(migrations, `CREATE INDEX IF NOT EXISTS idx_uploads_created ON uploads(created_at)`)
+
+	// Webhook configs table.
+	migrations = append(migrations, `CREATE TABLE IF NOT EXISTS webhook_configs (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT NOT NULL DEFAULT '',
+		url TEXT NOT NULL,
+		type TEXT NOT NULL DEFAULT 'generic',
+		enabled INTEGER NOT NULL DEFAULT 1,
+		events TEXT NOT NULL DEFAULT '*'
+	)`)
+
+	// Reading history table.
+	migrations = append(migrations, `CREATE TABLE IF NOT EXISTS reading_history (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		user_id INTEGER NOT NULL DEFAULT 0,
+		book_title TEXT NOT NULL DEFAULT '',
+		author TEXT NOT NULL DEFAULT '',
+		format TEXT NOT NULL DEFAULT '',
+		started_at REAL,
+		finished_at REAL,
+		rating INTEGER,
+		notes TEXT NOT NULL DEFAULT '',
+		library_item_id INTEGER,
+		FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+	)`)
+	migrations = append(migrations, `CREATE INDEX IF NOT EXISTS idx_reading_history_user ON reading_history(user_id)`)
+
+	// Series tracking table.
+	migrations = append(migrations, `CREATE TABLE IF NOT EXISTS series_tracking (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		series_name TEXT NOT NULL UNIQUE,
+		known_total INTEGER NOT NULL DEFAULT 0,
+		owned_count INTEGER NOT NULL DEFAULT 0,
+		last_checked REAL NOT NULL DEFAULT (strftime('%s','now'))
+	)`)
 
 	// Additive migrations — add columns that may not exist yet.
 	addColumns := []string{
@@ -1214,6 +1265,299 @@ func scanNotificationFromRows(rows *sql.Rows) (*models.Notification, error) {
 	n.Read = readInt == 1
 	n.CreatedAt = time.Unix(int64(createdAt), 0)
 	return &n, nil
+}
+
+// --- Webhook Configs ---
+
+// GetWebhookConfigs returns all webhook configurations.
+func (d *DB) GetWebhookConfigs() ([]webhook.Config, error) {
+	rows, err := d.db.Query("SELECT id, name, url, type, enabled, events FROM webhook_configs ORDER BY id")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var configs []webhook.Config
+	for rows.Next() {
+		var c webhook.Config
+		var enabled int
+		if err := rows.Scan(&c.ID, &c.Name, &c.URL, &c.Type, &enabled, &c.Events); err != nil {
+			continue
+		}
+		c.Enabled = enabled == 1
+		configs = append(configs, c)
+	}
+	return configs, nil
+}
+
+// CreateWebhookConfig inserts a new webhook config.
+func (d *DB) CreateWebhookConfig(c *webhook.Config) (int64, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	enabledInt := 0
+	if c.Enabled {
+		enabledInt = 1
+	}
+
+	result, err := d.db.Exec(
+		`INSERT INTO webhook_configs (name, url, type, enabled, events) VALUES (?, ?, ?, ?, ?)`,
+		c.Name, c.URL, c.Type, enabledInt, c.Events,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.LastInsertId()
+}
+
+// DeleteWebhookConfig removes a webhook config by ID.
+func (d *DB) DeleteWebhookConfig(id int64) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	result, err := d.db.Exec("DELETE FROM webhook_configs WHERE id = ?", id)
+	if err != nil {
+		return err
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("webhook not found")
+	}
+	return nil
+}
+
+// --- Reading History ---
+
+// AddReadingHistory inserts a reading history entry.
+func (d *DB) AddReadingHistory(userID int64, bookTitle, author, format string, startedAt, finishedAt *time.Time, rating *int, notes string, libraryItemID *int64) (int64, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	var startedAtVal, finishedAtVal sql.NullFloat64
+	if startedAt != nil {
+		startedAtVal = sql.NullFloat64{Float64: float64(startedAt.Unix()), Valid: true}
+	}
+	if finishedAt != nil {
+		finishedAtVal = sql.NullFloat64{Float64: float64(finishedAt.Unix()), Valid: true}
+	}
+
+	var ratingVal sql.NullInt64
+	if rating != nil {
+		ratingVal = sql.NullInt64{Int64: int64(*rating), Valid: true}
+	}
+
+	result, err := d.db.Exec(
+		`INSERT INTO reading_history (user_id, book_title, author, format, started_at, finished_at, rating, notes, library_item_id)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		userID, bookTitle, author, format, startedAtVal, finishedAtVal, ratingVal, notes, libraryItemID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.LastInsertId()
+}
+
+// GetReadingHistory returns paginated reading history for a user.
+func (d *DB) GetReadingHistory(userID int64, status string, limit, offset int) ([]ReadingHistoryEntry, error) {
+	query := `SELECT id, user_id, book_title, author, format, started_at, finished_at, rating, notes, library_item_id
+		FROM reading_history WHERE user_id = ?`
+	args := []interface{}{userID}
+
+	switch status {
+	case "reading":
+		query += " AND finished_at IS NULL"
+	case "finished":
+		query += " AND finished_at IS NOT NULL"
+	}
+
+	query += " ORDER BY COALESCE(finished_at, started_at) DESC LIMIT ? OFFSET ?"
+	args = append(args, limit, offset)
+
+	rows, err := d.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var entries []ReadingHistoryEntry
+	for rows.Next() {
+		var e ReadingHistoryEntry
+		var startedAt, finishedAt sql.NullFloat64
+		var rating sql.NullInt64
+		var libraryItemID sql.NullInt64
+
+		if err := rows.Scan(&e.ID, &e.UserID, &e.BookTitle, &e.Author, &e.Format, &startedAt, &finishedAt, &rating, &e.Notes, &libraryItemID); err != nil {
+			continue
+		}
+
+		if startedAt.Valid {
+			t := time.Unix(int64(startedAt.Float64), 0)
+			e.StartedAt = &t
+		}
+		if finishedAt.Valid {
+			t := time.Unix(int64(finishedAt.Float64), 0)
+			e.FinishedAt = &t
+			e.Status = "finished"
+		} else {
+			e.Status = "reading"
+		}
+		if rating.Valid {
+			r := int(rating.Int64)
+			e.Rating = &r
+		}
+		if libraryItemID.Valid {
+			lid := libraryItemID.Int64
+			e.LibraryItemID = &lid
+		}
+
+		entries = append(entries, e)
+	}
+	return entries, nil
+}
+
+// UpdateReadingHistory updates a history entry (finish date, rating, notes).
+func (d *DB) UpdateReadingHistory(id, userID int64, finishedAt *time.Time, rating *int, notes *string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	// Build dynamic update.
+	sets := []string{}
+	args := []interface{}{}
+
+	if finishedAt != nil {
+		sets = append(sets, "finished_at = ?")
+		args = append(args, float64(finishedAt.Unix()))
+	}
+	if rating != nil {
+		sets = append(sets, "rating = ?")
+		args = append(args, *rating)
+	}
+	if notes != nil {
+		sets = append(sets, "notes = ?")
+		args = append(args, *notes)
+	}
+
+	if len(sets) == 0 {
+		return nil
+	}
+
+	query := fmt.Sprintf("UPDATE reading_history SET %s WHERE id = ? AND user_id = ?",
+		strings.Join(sets, ", "))
+	args = append(args, id, userID)
+
+	result, err := d.db.Exec(query, args...)
+	if err != nil {
+		return err
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("entry not found")
+	}
+	return nil
+}
+
+// DeleteReadingHistory removes a history entry by ID.
+func (d *DB) DeleteReadingHistory(id, userID int64) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	result, err := d.db.Exec("DELETE FROM reading_history WHERE id = ? AND user_id = ?", id, userID)
+	if err != nil {
+		return err
+	}
+	n, _ := result.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("entry not found")
+	}
+	return nil
+}
+
+// GetReadingStats returns reading statistics for a user.
+func (d *DB) GetReadingStats(userID int64) (map[string]interface{}, error) {
+	stats := map[string]interface{}{}
+
+	// Total finished.
+	var totalFinished int
+	d.db.QueryRow("SELECT COUNT(*) FROM reading_history WHERE user_id = ? AND finished_at IS NOT NULL", userID).Scan(&totalFinished)
+	stats["total_finished"] = totalFinished
+
+	// Currently reading.
+	var currentlyReading int
+	d.db.QueryRow("SELECT COUNT(*) FROM reading_history WHERE user_id = ? AND finished_at IS NULL", userID).Scan(&currentlyReading)
+	stats["currently_reading"] = currentlyReading
+
+	// Average rating.
+	var avgRating sql.NullFloat64
+	d.db.QueryRow("SELECT AVG(rating) FROM reading_history WHERE user_id = ? AND rating IS NOT NULL", userID).Scan(&avgRating)
+	if avgRating.Valid {
+		stats["avg_rating"] = float64(int(avgRating.Float64*10)) / 10
+	} else {
+		stats["avg_rating"] = 0
+	}
+
+	// Books this month.
+	monthStart := time.Now().AddDate(0, 0, -time.Now().Day()+1)
+	var booksThisMonth int
+	d.db.QueryRow("SELECT COUNT(*) FROM reading_history WHERE user_id = ? AND finished_at IS NOT NULL AND finished_at >= ?",
+		userID, float64(monthStart.Unix())).Scan(&booksThisMonth)
+	stats["books_this_month"] = booksThisMonth
+
+	// Books this year.
+	yearStart := time.Date(time.Now().Year(), 1, 1, 0, 0, 0, 0, time.Local)
+	var booksThisYear int
+	d.db.QueryRow("SELECT COUNT(*) FROM reading_history WHERE user_id = ? AND finished_at IS NOT NULL AND finished_at >= ?",
+		userID, float64(yearStart.Unix())).Scan(&booksThisYear)
+	stats["books_this_year"] = booksThisYear
+
+	return stats, nil
+}
+
+// --- Series Tracking ---
+
+// UpsertSeriesTracking creates or updates a series tracking entry.
+func (d *DB) UpsertSeriesTracking(seriesName string, knownTotal, ownedCount int) (int64, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	result, err := d.db.Exec(
+		`INSERT INTO series_tracking (series_name, known_total, owned_count, last_checked)
+		 VALUES (?, ?, ?, ?)
+		 ON CONFLICT(series_name) DO UPDATE SET known_total = ?, owned_count = ?, last_checked = ?`,
+		seriesName, knownTotal, ownedCount, float64(time.Now().Unix()),
+		knownTotal, ownedCount, float64(time.Now().Unix()),
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.LastInsertId()
+}
+
+// GetSeriesTracking returns all tracked series.
+func (d *DB) GetSeriesTracking() ([]map[string]interface{}, error) {
+	rows, err := d.db.Query("SELECT id, series_name, known_total, owned_count, last_checked FROM series_tracking ORDER BY series_name")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []map[string]interface{}
+	for rows.Next() {
+		var id int64
+		var name string
+		var total, owned int
+		var lastChecked float64
+		if err := rows.Scan(&id, &name, &total, &owned, &lastChecked); err != nil {
+			continue
+		}
+		result = append(result, map[string]interface{}{
+			"id":           id,
+			"series_name":  name,
+			"known_total":  total,
+			"owned_count":  owned,
+			"last_checked": time.Unix(int64(lastChecked), 0).Format(time.RFC3339),
+		})
+	}
+	return result, nil
 }
 
 // ItemToJSON converts a LibraryItem to a JSON-friendly map.

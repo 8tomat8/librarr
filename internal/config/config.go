@@ -125,6 +125,16 @@ type Config struct {
 
 	// User Agent
 	UserAgent string
+
+	// Webhooks (env-based defaults)
+	WebhookURL  string
+	WebhookType string // "discord" or "generic"
+
+	// Scheduler
+	SchedulerEnabled       bool
+	SchedulerIntervalHours int
+	SchedulerAutoDownload  bool
+	SchedulerMinScore      int
 }
 
 // Load reads configuration from environment variables with sensible defaults.
@@ -225,6 +235,14 @@ func Load() *Config {
 		TransmissionPass: getEnv("TRANSMISSION_PASS", ""),
 
 		UserAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+
+		WebhookURL:  getEnv("WEBHOOK_URL", ""),
+		WebhookType: getEnv("WEBHOOK_TYPE", "generic"),
+
+		SchedulerEnabled:       getEnvBool("SCHEDULER_ENABLED", false),
+		SchedulerIntervalHours: getEnvInt("SCHEDULER_INTERVAL_HOURS", 24),
+		SchedulerAutoDownload:  getEnvBool("SCHEDULER_AUTO_DOWNLOAD", false),
+		SchedulerMinScore:      getEnvInt("SCHEDULER_MIN_SCORE", 70),
 	}
 }
 

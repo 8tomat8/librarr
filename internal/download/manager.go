@@ -12,6 +12,7 @@ import (
 	"github.com/JeremiahM37/librarr/internal/models"
 	"github.com/JeremiahM37/librarr/internal/organize"
 	"github.com/JeremiahM37/librarr/internal/search"
+	"github.com/JeremiahM37/librarr/internal/webhook"
 )
 
 // Manager coordinates downloads, background jobs, and the post-download pipeline.
@@ -24,9 +25,15 @@ type Manager struct {
 	organizer  *organize.Organizer
 	targets    *organize.LibraryTargets
 	health     *search.HealthTracker
+	webhookSender *webhook.Sender
 
 	mu   sync.Mutex
 	jobs map[string]*models.DownloadJob
+}
+
+// SetWebhookSender sets the webhook sender for download notifications.
+func (m *Manager) SetWebhookSender(ws *webhook.Sender) {
+	m.webhookSender = ws
 }
 
 // NewManager creates a download manager.
@@ -218,6 +225,14 @@ func (m *Manager) runAnnasDownload(job *models.DownloadJob) {
 			}()
 		} else {
 			m.updateJob(job, "dead_letter", "Max retries exceeded", err.Error())
+			if m.webhookSender != nil {
+				m.webhookSender.Send(webhook.Payload{
+					Event:   webhook.EventDownloadFailed,
+					Title:   "Download Failed",
+					Message: fmt.Sprintf("'%s' failed after %d retries: %s", job.Title, job.MaxRetries, err.Error()),
+					Status:  "failed",
+				})
+			}
 		}
 		return
 	}
@@ -263,6 +278,16 @@ func (m *Manager) runAnnasDownload(job *models.DownloadJob) {
 
 	m.updateJob(job, "completed", fmt.Sprintf("Done (%s)", search.HumanSize(fileSize)), "")
 	slog.Info("download completed", "title", job.Title, "source", "annas", "size", fileSize)
+
+	// Send webhook notification.
+	if m.webhookSender != nil {
+		m.webhookSender.Send(webhook.Payload{
+			Event:   webhook.EventDownloadComplete,
+			Title:   "Download Complete",
+			Message: fmt.Sprintf("'%s' downloaded from Anna's Archive (%s)", job.Title, search.HumanSize(fileSize)),
+			Status:  "completed",
+		})
+	}
 }
 
 func (m *Manager) runDirectDownload(job *models.DownloadJob, fileURL, sourceID string) {
@@ -315,6 +340,16 @@ func (m *Manager) runDirectDownload(job *models.DownloadJob, fileURL, sourceID s
 
 	m.updateJob(job, "completed", fmt.Sprintf("Done (%s)", search.HumanSize(fileSize)), "")
 	slog.Info("download completed", "title", job.Title, "source", job.Source, "size", fileSize)
+
+	// Send webhook notification.
+	if m.webhookSender != nil {
+		m.webhookSender.Send(webhook.Payload{
+			Event:   webhook.EventDownloadComplete,
+			Title:   "Download Complete",
+			Message: fmt.Sprintf("'%s' downloaded (%s)", job.Title, search.HumanSize(fileSize)),
+			Status:  "completed",
+		})
+	}
 }
 
 // GetDownloads returns combined download status from qBittorrent and background jobs.
