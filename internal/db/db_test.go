@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/JeremiahM37/librarr/internal/models"
+	"github.com/JeremiahM37/librarr/internal/webhook"
 )
 
 func newTestDB(t *testing.T) *DB {
@@ -609,4 +610,821 @@ func TestItemToJSON(t *testing.T) {
 	if _, ok := m2["metadata"]; ok {
 		t.Error("expected no metadata key for empty JSON")
 	}
+}
+
+func TestBlocklist_CRUD(t *testing.T) {
+	d := newTestDB(t)
+
+	t.Run("add and check", func(t *testing.T) {
+		id, err := d.AddBlocklistEntry("Bad Book", "annas", "http://example.com/bad", "abc123hash", "wrong file")
+		if err != nil {
+			t.Fatalf("AddBlocklistEntry failed: %v", err)
+		}
+		if id <= 0 {
+			t.Errorf("expected positive ID, got %d", id)
+		}
+
+		if !d.IsBlocklisted("http://example.com/bad", "") {
+			t.Error("expected URL to be blocklisted")
+		}
+		if !d.IsBlocklisted("", "abc123hash") {
+			t.Error("expected info hash to be blocklisted")
+		}
+		if d.IsBlocklisted("http://example.com/good", "") {
+			t.Error("expected non-blocklisted URL to return false")
+		}
+		if d.IsBlocklisted("", "otherhash") {
+			t.Error("expected non-blocklisted hash to return false")
+		}
+		if d.IsBlocklisted("", "") {
+			t.Error("expected empty strings to return false")
+		}
+	})
+
+	t.Run("list entries", func(t *testing.T) {
+		entries, err := d.GetBlocklist(10, 0)
+		if err != nil {
+			t.Fatalf("GetBlocklist failed: %v", err)
+		}
+		if len(entries) != 1 {
+			t.Fatalf("expected 1 entry, got %d", len(entries))
+		}
+		if entries[0].Title != "Bad Book" {
+			t.Errorf("expected title Bad Book, got %s", entries[0].Title)
+		}
+		if entries[0].Source != "annas" {
+			t.Errorf("expected source annas, got %s", entries[0].Source)
+		}
+		if entries[0].Reason != "wrong file" {
+			t.Errorf("expected reason wrong file, got %s", entries[0].Reason)
+		}
+	})
+
+	t.Run("delete entry", func(t *testing.T) {
+		entries, _ := d.GetBlocklist(10, 0)
+		err := d.DeleteBlocklistEntry(entries[0].ID)
+		if err != nil {
+			t.Fatalf("DeleteBlocklistEntry failed: %v", err)
+		}
+		if d.IsBlocklisted("http://example.com/bad", "") {
+			t.Error("expected URL to no longer be blocklisted after delete")
+		}
+	})
+
+	t.Run("delete nonexistent entry", func(t *testing.T) {
+		err := d.DeleteBlocklistEntry(99999)
+		if err == nil {
+			t.Error("expected error deleting nonexistent blocklist entry")
+		}
+	})
+
+	t.Run("clear blocklist", func(t *testing.T) {
+		d.AddBlocklistEntry("Book A", "src", "urlA", "hashA", "reason")
+		d.AddBlocklistEntry("Book B", "src", "urlB", "hashB", "reason")
+
+		err := d.ClearBlocklist()
+		if err != nil {
+			t.Fatalf("ClearBlocklist failed: %v", err)
+		}
+
+		entries, _ := d.GetBlocklist(10, 0)
+		if len(entries) != 0 {
+			t.Errorf("expected 0 entries after clear, got %d", len(entries))
+		}
+	})
+}
+
+func TestQualityProfile_CRUD(t *testing.T) {
+	d := newTestDB(t)
+
+	t.Run("create and get", func(t *testing.T) {
+		qp := &QualityProfile{
+			Name:             "High Quality",
+			FormatRanking:    []string{"epub", "mobi", "pdf"},
+			PreferredSizeMin: 100000,
+			PreferredSizeMax: 50000000,
+			UpgradeAllowed:   true,
+			CutoffFormat:     "epub",
+		}
+
+		id, err := d.CreateQualityProfile(qp)
+		if err != nil {
+			t.Fatalf("CreateQualityProfile failed: %v", err)
+		}
+		if id <= 0 {
+			t.Errorf("expected positive ID, got %d", id)
+		}
+
+		got, err := d.GetQualityProfile(id)
+		if err != nil {
+			t.Fatalf("GetQualityProfile failed: %v", err)
+		}
+		if got.Name != "High Quality" {
+			t.Errorf("expected name High Quality, got %s", got.Name)
+		}
+		if len(got.FormatRanking) != 3 {
+			t.Fatalf("expected 3 formats, got %d", len(got.FormatRanking))
+		}
+		if got.FormatRanking[0] != "epub" {
+			t.Errorf("expected first format epub, got %s", got.FormatRanking[0])
+		}
+		if !got.UpgradeAllowed {
+			t.Error("expected UpgradeAllowed to be true")
+		}
+		if got.CutoffFormat != "epub" {
+			t.Errorf("expected cutoff epub, got %s", got.CutoffFormat)
+		}
+	})
+
+	t.Run("list profiles", func(t *testing.T) {
+		profiles, err := d.GetQualityProfiles()
+		if err != nil {
+			t.Fatalf("GetQualityProfiles failed: %v", err)
+		}
+		if len(profiles) != 1 {
+			t.Errorf("expected 1 profile, got %d", len(profiles))
+		}
+	})
+
+	t.Run("update profile", func(t *testing.T) {
+		profiles, _ := d.GetQualityProfiles()
+		qp := profiles[0]
+		qp.Name = "Updated Quality"
+		qp.UpgradeAllowed = false
+
+		err := d.UpdateQualityProfile(&qp)
+		if err != nil {
+			t.Fatalf("UpdateQualityProfile failed: %v", err)
+		}
+
+		got, _ := d.GetQualityProfile(qp.ID)
+		if got.Name != "Updated Quality" {
+			t.Errorf("expected name Updated Quality, got %s", got.Name)
+		}
+		if got.UpgradeAllowed {
+			t.Error("expected UpgradeAllowed to be false")
+		}
+	})
+
+	t.Run("delete profile", func(t *testing.T) {
+		profiles, _ := d.GetQualityProfiles()
+		err := d.DeleteQualityProfile(profiles[0].ID)
+		if err != nil {
+			t.Fatalf("DeleteQualityProfile failed: %v", err)
+		}
+
+		result, _ := d.GetQualityProfiles()
+		if len(result) != 0 {
+			t.Errorf("expected 0 profiles after delete, got %d", len(result))
+		}
+	})
+
+	t.Run("delete nonexistent", func(t *testing.T) {
+		err := d.DeleteQualityProfile(99999)
+		if err == nil {
+			t.Error("expected error deleting nonexistent quality profile")
+		}
+	})
+
+	t.Run("get nonexistent", func(t *testing.T) {
+		_, err := d.GetQualityProfile(99999)
+		if err == nil {
+			t.Error("expected error getting nonexistent quality profile")
+		}
+	})
+}
+
+func TestReleaseProfile_CRUD(t *testing.T) {
+	d := newTestDB(t)
+
+	t.Run("create and get", func(t *testing.T) {
+		rp := &ReleaseProfile{
+			Name:           "Ebook Preferred",
+			MustContain:    []string{"epub"},
+			MustNotContain: []string{"sample", "preview"},
+			Preferred: []PreferredWord{
+				{Word: "calibre", Score: 10},
+				{Word: "retail", Score: 20},
+			},
+			Enabled: true,
+		}
+
+		id, err := d.CreateReleaseProfile(rp)
+		if err != nil {
+			t.Fatalf("CreateReleaseProfile failed: %v", err)
+		}
+		if id <= 0 {
+			t.Errorf("expected positive ID, got %d", id)
+		}
+
+		got, err := d.GetReleaseProfile(id)
+		if err != nil {
+			t.Fatalf("GetReleaseProfile failed: %v", err)
+		}
+		if got.Name != "Ebook Preferred" {
+			t.Errorf("expected name Ebook Preferred, got %s", got.Name)
+		}
+		if len(got.MustContain) != 1 || got.MustContain[0] != "epub" {
+			t.Errorf("expected MustContain [epub], got %v", got.MustContain)
+		}
+		if len(got.MustNotContain) != 2 {
+			t.Errorf("expected 2 MustNotContain entries, got %d", len(got.MustNotContain))
+		}
+		if len(got.Preferred) != 2 {
+			t.Fatalf("expected 2 preferred words, got %d", len(got.Preferred))
+		}
+		if got.Preferred[1].Word != "retail" || got.Preferred[1].Score != 20 {
+			t.Errorf("expected preferred retail/20, got %s/%d", got.Preferred[1].Word, got.Preferred[1].Score)
+		}
+		if !got.Enabled {
+			t.Error("expected profile to be enabled")
+		}
+	})
+
+	t.Run("list profiles", func(t *testing.T) {
+		profiles, err := d.GetReleaseProfiles()
+		if err != nil {
+			t.Fatalf("GetReleaseProfiles failed: %v", err)
+		}
+		if len(profiles) != 1 {
+			t.Errorf("expected 1 profile, got %d", len(profiles))
+		}
+	})
+
+	t.Run("update profile", func(t *testing.T) {
+		profiles, _ := d.GetReleaseProfiles()
+		rp := profiles[0]
+		rp.Name = "Updated Release"
+		rp.Enabled = false
+
+		err := d.UpdateReleaseProfile(&rp)
+		if err != nil {
+			t.Fatalf("UpdateReleaseProfile failed: %v", err)
+		}
+
+		got, _ := d.GetReleaseProfile(rp.ID)
+		if got.Name != "Updated Release" {
+			t.Errorf("expected Updated Release, got %s", got.Name)
+		}
+		if got.Enabled {
+			t.Error("expected profile to be disabled")
+		}
+	})
+
+	t.Run("delete profile", func(t *testing.T) {
+		profiles, _ := d.GetReleaseProfiles()
+		err := d.DeleteReleaseProfile(profiles[0].ID)
+		if err != nil {
+			t.Fatalf("DeleteReleaseProfile failed: %v", err)
+		}
+
+		result, _ := d.GetReleaseProfiles()
+		if len(result) != 0 {
+			t.Errorf("expected 0 profiles after delete, got %d", len(result))
+		}
+	})
+
+	t.Run("delete nonexistent", func(t *testing.T) {
+		err := d.DeleteReleaseProfile(99999)
+		if err == nil {
+			t.Error("expected error deleting nonexistent release profile")
+		}
+	})
+}
+
+func TestTags_CRUD(t *testing.T) {
+	d := newTestDB(t)
+
+	t.Run("create and list", func(t *testing.T) {
+		id1, err := d.CreateTag("fiction", "#3498db")
+		if err != nil {
+			t.Fatalf("CreateTag failed: %v", err)
+		}
+		if id1 <= 0 {
+			t.Errorf("expected positive ID, got %d", id1)
+		}
+
+		id2, err := d.CreateTag("sci-fi", "#e74c3c")
+		if err != nil {
+			t.Fatalf("CreateTag failed: %v", err)
+		}
+
+		tags, err := d.GetTags()
+		if err != nil {
+			t.Fatalf("GetTags failed: %v", err)
+		}
+		if len(tags) != 2 {
+			t.Fatalf("expected 2 tags, got %d", len(tags))
+		}
+		_ = id2
+	})
+
+	t.Run("add tag to item", func(t *testing.T) {
+		// Create a library item first.
+		itemID, err := d.AddItem(&models.LibraryItem{
+			Title:     "Tagged Book",
+			Author:    "Author",
+			MediaType: "ebook",
+			Source:    "test",
+		})
+		if err != nil {
+			t.Fatalf("AddItem failed: %v", err)
+		}
+
+		tags, _ := d.GetTags()
+		err = d.AddItemTag(itemID, tags[0].ID)
+		if err != nil {
+			t.Fatalf("AddItemTag failed: %v", err)
+		}
+
+		// Get item tags.
+		itemTags, err := d.GetItemTags(itemID)
+		if err != nil {
+			t.Fatalf("GetItemTags failed: %v", err)
+		}
+		if len(itemTags) != 1 {
+			t.Fatalf("expected 1 tag, got %d", len(itemTags))
+		}
+		if itemTags[0].Name != tags[0].Name {
+			t.Errorf("expected tag %s, got %s", tags[0].Name, itemTags[0].Name)
+		}
+	})
+
+	t.Run("add duplicate tag to item is idempotent", func(t *testing.T) {
+		items, _ := d.GetItems("", 10, 0)
+		tags, _ := d.GetTags()
+		// Adding same tag again should not error (INSERT OR IGNORE).
+		err := d.AddItemTag(items[0].ID, tags[0].ID)
+		if err != nil {
+			t.Fatalf("duplicate AddItemTag should not error: %v", err)
+		}
+		itemTags, _ := d.GetItemTags(items[0].ID)
+		if len(itemTags) != 1 {
+			t.Errorf("expected still 1 tag after duplicate add, got %d", len(itemTags))
+		}
+	})
+
+	t.Run("remove tag from item", func(t *testing.T) {
+		items, _ := d.GetItems("", 10, 0)
+		tags, _ := d.GetTags()
+
+		err := d.RemoveItemTag(items[0].ID, tags[0].ID)
+		if err != nil {
+			t.Fatalf("RemoveItemTag failed: %v", err)
+		}
+
+		itemTags, _ := d.GetItemTags(items[0].ID)
+		if len(itemTags) != 0 {
+			t.Errorf("expected 0 tags after remove, got %d", len(itemTags))
+		}
+	})
+
+	t.Run("get items by tag", func(t *testing.T) {
+		items, _ := d.GetItems("", 10, 0)
+		tags, _ := d.GetTags()
+		d.AddItemTag(items[0].ID, tags[0].ID)
+
+		taggedItems, err := d.GetItemsByTag(tags[0].ID, 10, 0)
+		if err != nil {
+			t.Fatalf("GetItemsByTag failed: %v", err)
+		}
+		if len(taggedItems) != 1 {
+			t.Errorf("expected 1 tagged item, got %d", len(taggedItems))
+		}
+	})
+
+	t.Run("delete tag cascades", func(t *testing.T) {
+		tags, _ := d.GetTags()
+		items, _ := d.GetItems("", 10, 0)
+
+		err := d.DeleteTag(tags[0].ID)
+		if err != nil {
+			t.Fatalf("DeleteTag failed: %v", err)
+		}
+
+		// Tag should be removed from item.
+		itemTags, _ := d.GetItemTags(items[0].ID)
+		for _, it := range itemTags {
+			if it.ID == tags[0].ID {
+				t.Error("expected tag to be removed from item after delete")
+			}
+		}
+	})
+
+	t.Run("delete nonexistent tag", func(t *testing.T) {
+		err := d.DeleteTag(99999)
+		if err == nil {
+			t.Error("expected error deleting nonexistent tag")
+		}
+	})
+}
+
+func TestReadingHistory_CRUD(t *testing.T) {
+	d := newTestDB(t)
+
+	// Create a user for history entries.
+	userID, err := d.CreateUser("reader", "hash", "user")
+	if err != nil {
+		t.Fatalf("CreateUser failed: %v", err)
+	}
+
+	t.Run("add reading entry", func(t *testing.T) {
+		now := time.Now()
+		rating := 5
+		id, err := d.AddReadingHistory(userID, "Dune", "Frank Herbert", "epub", &now, nil, &rating, "Great book", nil)
+		if err != nil {
+			t.Fatalf("AddReadingHistory failed: %v", err)
+		}
+		if id <= 0 {
+			t.Errorf("expected positive ID, got %d", id)
+		}
+	})
+
+	t.Run("list reading history", func(t *testing.T) {
+		entries, err := d.GetReadingHistory(userID, "", 10, 0)
+		if err != nil {
+			t.Fatalf("GetReadingHistory failed: %v", err)
+		}
+		if len(entries) != 1 {
+			t.Fatalf("expected 1 entry, got %d", len(entries))
+		}
+		if entries[0].BookTitle != "Dune" {
+			t.Errorf("expected Dune, got %s", entries[0].BookTitle)
+		}
+		if entries[0].Author != "Frank Herbert" {
+			t.Errorf("expected Frank Herbert, got %s", entries[0].Author)
+		}
+		if entries[0].Status != "reading" {
+			t.Errorf("expected status reading, got %s", entries[0].Status)
+		}
+		if entries[0].Rating == nil || *entries[0].Rating != 5 {
+			t.Error("expected rating 5")
+		}
+	})
+
+	t.Run("filter by status reading", func(t *testing.T) {
+		entries, err := d.GetReadingHistory(userID, "reading", 10, 0)
+		if err != nil {
+			t.Fatalf("GetReadingHistory reading failed: %v", err)
+		}
+		if len(entries) != 1 {
+			t.Errorf("expected 1 reading entry, got %d", len(entries))
+		}
+	})
+
+	t.Run("filter by status finished", func(t *testing.T) {
+		entries, err := d.GetReadingHistory(userID, "finished", 10, 0)
+		if err != nil {
+			t.Fatalf("GetReadingHistory finished failed: %v", err)
+		}
+		if len(entries) != 0 {
+			t.Errorf("expected 0 finished entries, got %d", len(entries))
+		}
+	})
+
+	t.Run("update reading entry", func(t *testing.T) {
+		entries, _ := d.GetReadingHistory(userID, "", 10, 0)
+		now := time.Now()
+		newRating := 4
+		newNotes := "Updated notes"
+
+		err := d.UpdateReadingHistory(entries[0].ID, userID, &now, &newRating, &newNotes)
+		if err != nil {
+			t.Fatalf("UpdateReadingHistory failed: %v", err)
+		}
+
+		updated, _ := d.GetReadingHistory(userID, "", 10, 0)
+		if updated[0].Status != "finished" {
+			t.Errorf("expected status finished after setting finishedAt, got %s", updated[0].Status)
+		}
+		if updated[0].Rating == nil || *updated[0].Rating != 4 {
+			t.Error("expected updated rating 4")
+		}
+		if updated[0].Notes != "Updated notes" {
+			t.Errorf("expected Updated notes, got %s", updated[0].Notes)
+		}
+	})
+
+	t.Run("update nonexistent entry", func(t *testing.T) {
+		now := time.Now()
+		err := d.UpdateReadingHistory(99999, userID, &now, nil, nil)
+		if err == nil {
+			t.Error("expected error updating nonexistent entry")
+		}
+	})
+
+	t.Run("reading stats", func(t *testing.T) {
+		stats, err := d.GetReadingStats(userID)
+		if err != nil {
+			t.Fatalf("GetReadingStats failed: %v", err)
+		}
+		if stats["total_finished"].(int) != 1 {
+			t.Errorf("expected 1 finished, got %v", stats["total_finished"])
+		}
+		if stats["currently_reading"].(int) != 0 {
+			t.Errorf("expected 0 currently reading, got %v", stats["currently_reading"])
+		}
+	})
+
+	t.Run("delete reading entry", func(t *testing.T) {
+		entries, _ := d.GetReadingHistory(userID, "", 10, 0)
+		err := d.DeleteReadingHistory(entries[0].ID, userID)
+		if err != nil {
+			t.Fatalf("DeleteReadingHistory failed: %v", err)
+		}
+
+		remaining, _ := d.GetReadingHistory(userID, "", 10, 0)
+		if len(remaining) != 0 {
+			t.Errorf("expected 0 entries after delete, got %d", len(remaining))
+		}
+	})
+
+	t.Run("delete nonexistent entry", func(t *testing.T) {
+		err := d.DeleteReadingHistory(99999, userID)
+		if err == nil {
+			t.Error("expected error deleting nonexistent reading history entry")
+		}
+	})
+
+	t.Run("add entry with nil optional fields", func(t *testing.T) {
+		id, err := d.AddReadingHistory(userID, "Simple Book", "Author", "pdf", nil, nil, nil, "", nil)
+		if err != nil {
+			t.Fatalf("AddReadingHistory with nils failed: %v", err)
+		}
+		if id <= 0 {
+			t.Error("expected positive ID")
+		}
+	})
+}
+
+func TestMonitoredAuthors_CRUD(t *testing.T) {
+	d := newTestDB(t)
+
+	t.Run("add and list", func(t *testing.T) {
+		id, err := d.AddMonitoredAuthor("Brandon Sanderson", 7)
+		if err != nil {
+			t.Fatalf("AddMonitoredAuthor failed: %v", err)
+		}
+		if id <= 0 {
+			t.Errorf("expected positive ID, got %d", id)
+		}
+
+		authors, err := d.GetMonitoredAuthors()
+		if err != nil {
+			t.Fatalf("GetMonitoredAuthors failed: %v", err)
+		}
+		if len(authors) != 1 {
+			t.Fatalf("expected 1 author, got %d", len(authors))
+		}
+		if authors[0].Name != "Brandon Sanderson" {
+			t.Errorf("expected Brandon Sanderson, got %s", authors[0].Name)
+		}
+		if authors[0].CheckIntervalDays != 7 {
+			t.Errorf("expected interval 7, got %d", authors[0].CheckIntervalDays)
+		}
+		if !authors[0].LastChecked.IsZero() {
+			t.Error("expected LastChecked to be zero initially")
+		}
+		if authors[0].LastBookFound != "" {
+			t.Errorf("expected empty LastBookFound, got %s", authors[0].LastBookFound)
+		}
+	})
+
+	t.Run("update last checked", func(t *testing.T) {
+		authors, _ := d.GetMonitoredAuthors()
+		err := d.UpdateMonitoredAuthorCheck(authors[0].ID, "Wind and Truth")
+		if err != nil {
+			t.Fatalf("UpdateMonitoredAuthorCheck failed: %v", err)
+		}
+
+		updated, _ := d.GetMonitoredAuthors()
+		if updated[0].LastBookFound != "Wind and Truth" {
+			t.Errorf("expected LastBookFound Wind and Truth, got %s", updated[0].LastBookFound)
+		}
+		if updated[0].LastChecked.IsZero() {
+			t.Error("expected LastChecked to be set after update")
+		}
+	})
+
+	t.Run("add multiple authors", func(t *testing.T) {
+		d.AddMonitoredAuthor("Patrick Rothfuss", 30)
+		authors, _ := d.GetMonitoredAuthors()
+		if len(authors) != 2 {
+			t.Errorf("expected 2 authors, got %d", len(authors))
+		}
+	})
+
+	t.Run("delete author", func(t *testing.T) {
+		authors, _ := d.GetMonitoredAuthors()
+		err := d.DeleteMonitoredAuthor(authors[0].ID)
+		if err != nil {
+			t.Fatalf("DeleteMonitoredAuthor failed: %v", err)
+		}
+
+		remaining, _ := d.GetMonitoredAuthors()
+		if len(remaining) != 1 {
+			t.Errorf("expected 1 author after delete, got %d", len(remaining))
+		}
+	})
+
+	t.Run("delete nonexistent author", func(t *testing.T) {
+		err := d.DeleteMonitoredAuthor(99999)
+		if err == nil {
+			t.Error("expected error deleting nonexistent monitored author")
+		}
+	})
+}
+
+func TestWebhookConfig_CRUD(t *testing.T) {
+	d := newTestDB(t)
+
+	t.Run("create and list", func(t *testing.T) {
+		cfg := &webhook.Config{
+			Name:    "Discord Notifications",
+			URL:     "https://discord.com/api/webhooks/123/abc",
+			Type:    "discord",
+			Enabled: true,
+			Events:  "download_complete,download_failed",
+		}
+
+		id, err := d.CreateWebhookConfig(cfg)
+		if err != nil {
+			t.Fatalf("CreateWebhookConfig failed: %v", err)
+		}
+		if id <= 0 {
+			t.Errorf("expected positive ID, got %d", id)
+		}
+
+		configs, err := d.GetWebhookConfigs()
+		if err != nil {
+			t.Fatalf("GetWebhookConfigs failed: %v", err)
+		}
+		if len(configs) != 1 {
+			t.Fatalf("expected 1 config, got %d", len(configs))
+		}
+		if configs[0].Name != "Discord Notifications" {
+			t.Errorf("expected name Discord Notifications, got %s", configs[0].Name)
+		}
+		if configs[0].URL != "https://discord.com/api/webhooks/123/abc" {
+			t.Errorf("expected URL, got %s", configs[0].URL)
+		}
+		if configs[0].Type != "discord" {
+			t.Errorf("expected type discord, got %s", configs[0].Type)
+		}
+		if !configs[0].Enabled {
+			t.Error("expected webhook to be enabled")
+		}
+		if configs[0].Events != "download_complete,download_failed" {
+			t.Errorf("expected events string, got %s", configs[0].Events)
+		}
+	})
+
+	t.Run("create disabled webhook", func(t *testing.T) {
+		cfg := &webhook.Config{
+			Name:    "Generic Webhook",
+			URL:     "https://example.com/hook",
+			Type:    "generic",
+			Enabled: false,
+			Events:  "*",
+		}
+		d.CreateWebhookConfig(cfg)
+
+		configs, _ := d.GetWebhookConfigs()
+		if len(configs) != 2 {
+			t.Fatalf("expected 2 configs, got %d", len(configs))
+		}
+
+		// Find the disabled one.
+		found := false
+		for _, c := range configs {
+			if c.Name == "Generic Webhook" && !c.Enabled {
+				found = true
+			}
+		}
+		if !found {
+			t.Error("expected to find disabled Generic Webhook")
+		}
+	})
+
+	t.Run("delete webhook", func(t *testing.T) {
+		configs, _ := d.GetWebhookConfigs()
+		err := d.DeleteWebhookConfig(configs[0].ID)
+		if err != nil {
+			t.Fatalf("DeleteWebhookConfig failed: %v", err)
+		}
+
+		remaining, _ := d.GetWebhookConfigs()
+		if len(remaining) != 1 {
+			t.Errorf("expected 1 config after delete, got %d", len(remaining))
+		}
+	})
+
+	t.Run("delete nonexistent webhook", func(t *testing.T) {
+		err := d.DeleteWebhookConfig(99999)
+		if err == nil {
+			t.Error("expected error deleting nonexistent webhook config")
+		}
+	})
+}
+
+func TestNotifications_CRUD(t *testing.T) {
+	d := newTestDB(t)
+
+	userID, err := d.CreateUser("notifyuser", "hash", "admin")
+	if err != nil {
+		t.Fatalf("CreateUser failed: %v", err)
+	}
+
+	t.Run("create and list", func(t *testing.T) {
+		n := &models.Notification{
+			UserID:    userID,
+			Type:      "request_completed",
+			Title:     "Download Complete",
+			Message:   "Dune has been downloaded",
+			CreatedAt: time.Now(),
+		}
+
+		id, err := d.CreateNotification(n)
+		if err != nil {
+			t.Fatalf("CreateNotification failed: %v", err)
+		}
+		if id <= 0 {
+			t.Errorf("expected positive ID, got %d", id)
+		}
+
+		notifications, err := d.GetNotifications(userID, 10, 0)
+		if err != nil {
+			t.Fatalf("GetNotifications failed: %v", err)
+		}
+		if len(notifications) != 1 {
+			t.Fatalf("expected 1 notification, got %d", len(notifications))
+		}
+		if notifications[0].Title != "Download Complete" {
+			t.Errorf("expected title Download Complete, got %s", notifications[0].Title)
+		}
+		if notifications[0].Read {
+			t.Error("expected notification to be unread initially")
+		}
+	})
+
+	t.Run("count unread", func(t *testing.T) {
+		count, err := d.CountUnreadNotifications(userID)
+		if err != nil {
+			t.Fatalf("CountUnreadNotifications failed: %v", err)
+		}
+		if count != 1 {
+			t.Errorf("expected 1 unread, got %d", count)
+		}
+	})
+
+	t.Run("mark read", func(t *testing.T) {
+		notifications, _ := d.GetNotifications(userID, 10, 0)
+		err := d.MarkNotificationRead(notifications[0].ID, userID)
+		if err != nil {
+			t.Fatalf("MarkNotificationRead failed: %v", err)
+		}
+
+		count, _ := d.CountUnreadNotifications(userID)
+		if count != 0 {
+			t.Errorf("expected 0 unread after marking read, got %d", count)
+		}
+	})
+
+	t.Run("mark all read", func(t *testing.T) {
+		// Add more notifications.
+		d.CreateNotification(&models.Notification{UserID: userID, Type: "info", Title: "Test 1", CreatedAt: time.Now()})
+		d.CreateNotification(&models.Notification{UserID: userID, Type: "info", Title: "Test 2", CreatedAt: time.Now()})
+
+		err := d.MarkAllNotificationsRead(userID)
+		if err != nil {
+			t.Fatalf("MarkAllNotificationsRead failed: %v", err)
+		}
+
+		count, _ := d.CountUnreadNotifications(userID)
+		if count != 0 {
+			t.Errorf("expected 0 unread after mark all, got %d", count)
+		}
+	})
+
+	t.Run("delete notification", func(t *testing.T) {
+		notifications, _ := d.GetNotifications(userID, 10, 0)
+		err := d.DeleteNotification(notifications[0].ID, userID)
+		if err != nil {
+			t.Fatalf("DeleteNotification failed: %v", err)
+		}
+	})
+
+	t.Run("delete nonexistent notification", func(t *testing.T) {
+		err := d.DeleteNotification(99999, userID)
+		if err == nil {
+			t.Error("expected error deleting nonexistent notification")
+		}
+	})
+
+	t.Run("mark nonexistent notification read", func(t *testing.T) {
+		err := d.MarkNotificationRead(99999, userID)
+		if err == nil {
+			t.Error("expected error marking nonexistent notification read")
+		}
+	})
 }
