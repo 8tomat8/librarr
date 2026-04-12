@@ -128,7 +128,7 @@ func (d *DirectDownloader) downloadFile(fileURL, title string, progressFn func(s
 		return "", 0, fmt.Errorf("create incoming dir: %w", err)
 	}
 
-	// Determine file extension from Content-Type.
+	// Initial extension from Content-Type (may be corrected after inspecting bytes).
 	ext := ".epub"
 	if strings.Contains(contentType, "pdf") {
 		ext = ".pdf"
@@ -139,9 +139,9 @@ func (d *DirectDownloader) downloadFile(fileURL, title string, progressFn func(s
 	if err != nil {
 		return "", 0, fmt.Errorf("create file: %w", err)
 	}
-	defer f.Close()
 
 	written, err := io.Copy(f, resp.Body)
+	f.Close()
 	if err != nil {
 		os.Remove(filePath)
 		return "", 0, fmt.Errorf("write file: %w", err)
@@ -152,9 +152,25 @@ func (d *DirectDownloader) downloadFile(fileURL, title string, progressFn func(s
 		return "", 0, fmt.Errorf("downloaded file too small (%d bytes)", written)
 	}
 
+	// Detect actual file type from magic bytes and correct the extension if needed.
+	// Content-Type headers often lie (e.g., application/octet-stream) so we always
+	// verify by reading the file signature. This fixes #8.
+	actualExt, err := detectFileExtension(filePath)
+	if err != nil {
+		slog.Warn("failed to detect file type from content", "error", err, "path", filePath)
+	} else if actualExt != "" && actualExt != ext {
+		correctedPath := filepath.Join(d.cfg.IncomingDir, safeTitle+actualExt)
+		if err := os.Rename(filePath, correctedPath); err == nil {
+			slog.Info("corrected file extension based on content", "title", title,
+				"from", ext, "to", actualExt)
+			filePath = correctedPath
+			ext = actualExt
+		}
+	}
+
 	slog.Info("file downloaded", "title", title, "size", written, "path", filePath)
 
-	// EPUB verification: validate ZIP and title match.
+	// EPUB verification: validate ZIP and title match (only for actual EPUB files).
 	if strings.HasSuffix(strings.ToLower(filePath), ".epub") {
 		if err := d.verifyEPUB(filePath, title); err != nil {
 			os.Remove(filePath)
@@ -163,6 +179,41 @@ func (d *DirectDownloader) downloadFile(fileURL, title string, progressFn func(s
 	}
 
 	return filePath, written, nil
+}
+
+// detectFileExtension inspects the first bytes of a file and returns the
+// appropriate extension for its actual content. Returns "" if the format
+// is not recognized (caller should keep the original extension).
+func detectFileExtension(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	var header [8]byte
+	n, err := f.Read(header[:])
+	if err != nil && err != io.EOF {
+		return "", err
+	}
+	if n < 4 {
+		return "", nil
+	}
+
+	// Magic byte signatures
+	switch {
+	case string(header[:5]) == "%PDF-":
+		return ".pdf", nil
+	case header[0] == 0x50 && header[1] == 0x4B && (header[2] == 0x03 || header[2] == 0x05):
+		// ZIP container — could be EPUB, CBZ, or plain ZIP. For ebook downloads,
+		// EPUB is overwhelmingly the most common format, so we assume it.
+		return ".epub", nil
+	case header[0] == 0x52 && header[1] == 0x61 && header[2] == 0x72 && header[3] == 0x21:
+		return ".cbr", nil // RAR, likely CBR in ebook context
+	case string(header[:4]) == "BOOK" || (header[0] == 0xEB && header[2] == 0x48):
+		return ".mobi", nil
+	}
+	return "", nil
 }
 
 // verifyEPUB validates that an EPUB file is a valid ZIP and its title matches.
