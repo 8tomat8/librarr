@@ -28,6 +28,17 @@ func NewDirectDownloader(cfg *config.Config, client *http.Client) *DirectDownloa
 
 var getLinkRe = regexp.MustCompile(`href="(get\.php\?md5=[^"]+)"`)
 
+// libgenMirrors are alternative libgen front-ends that implement the
+// ads.php → get.php download flow. Tried in order when one fails.
+// (Other libgen domains like .is / .rs use a different URL scheme.)
+var libgenMirrors = []string{
+	"https://libgen.li",
+	"https://libgen.la",
+	"https://libgen.bz",
+	"https://libgen.gl",
+	"https://libgen.vg",
+}
+
 // DownloadFromAnnas downloads a file from Anna's Archive via libgen.
 // Returns the local file path and size, or an error.
 func (d *DirectDownloader) DownloadFromAnnas(md5, title string, progressFn func(string)) (string, int64, error) {
@@ -35,40 +46,22 @@ func (d *DirectDownloader) DownloadFromAnnas(md5, title string, progressFn func(
 		progressFn("Fetching download link from Anna's Archive...")
 	}
 
-	// Step 1: Get the download key from libgen ads page.
-	adsURL := fmt.Sprintf("https://libgen.li/ads.php?md5=%s", md5)
-	req, err := http.NewRequest("GET", adsURL, nil)
-	if err != nil {
-		return "", 0, err
-	}
-	req.Header.Set("User-Agent", d.cfg.UserAgent)
-
-	resp, err := d.client.Do(req)
-	if err != nil {
-		return "", 0, fmt.Errorf("fetch libgen ads page: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, 2*1024*1024)) // 2MB max for HTML pages
-	if resp.StatusCode != 200 {
-		return "", 0, fmt.Errorf("libgen ads page HTTP %d", resp.StatusCode)
-	}
-
-	match := getLinkRe.FindSubmatch(body)
-	if len(match) < 2 {
-		// Try alternative MD5 hashes by re-searching Anna's Archive.
+	// Step 1: Try each libgen mirror to get the download key.
+	downloadURL, mirrorErr := d.fetchLibgenDownloadURL(md5, progressFn)
+	if mirrorErr != nil {
+		// All libgen mirrors failed. Try alternative MD5 hashes by re-searching
+		// Anna's Archive — the same book often has multiple MD5s across mirrors.
 		if progressFn != nil {
-			progressFn("No direct link found, trying alternative mirrors...")
+			progressFn("All libgen mirrors failed, trying alternative MD5s...")
 		}
 		altURL, altErr := d.tryAltMD5(title, md5, progressFn)
 		if altErr != nil {
-			return "", 0, fmt.Errorf("no get.php link found on libgen for md5=%s (alt search also failed: %v)", md5, altErr)
+			return "", 0, fmt.Errorf("all libgen mirrors failed (%v); alt search also failed: %v", mirrorErr, altErr)
 		}
 		return d.downloadFile(altURL, title, progressFn)
 	}
 
-	downloadURL := fmt.Sprintf("https://libgen.li/%s", string(match[1]))
-	slog.Info("found libgen download link", "title", title, "url", downloadURL[:60])
+	slog.Info("found libgen download link", "title", title, "url", downloadURL[:min(60, len(downloadURL))])
 
 	if progressFn != nil {
 		progressFn("Downloading...")
@@ -76,6 +69,51 @@ func (d *DirectDownloader) DownloadFromAnnas(md5, title string, progressFn func(
 
 	// Step 2: Download the file.
 	return d.downloadFile(downloadURL, title, progressFn)
+}
+
+// fetchLibgenDownloadURL tries each libgen mirror to find a valid get.php
+// download link. Returns the full URL on success, or the last error if all
+// mirrors fail. Transient errors (5xx, network) move on to the next mirror;
+// "link not found" on one mirror also tries the next since mirrors sometimes
+// have the book while others don't.
+func (d *DirectDownloader) fetchLibgenDownloadURL(md5 string, progressFn func(string)) (string, error) {
+	var lastErr error
+	for i, mirror := range libgenMirrors {
+		if i > 0 && progressFn != nil {
+			progressFn(fmt.Sprintf("Trying mirror: %s", mirror))
+		}
+
+		adsURL := fmt.Sprintf("%s/ads.php?md5=%s", mirror, md5)
+		req, err := http.NewRequest("GET", adsURL, nil)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		req.Header.Set("User-Agent", d.cfg.UserAgent)
+
+		resp, err := d.client.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("%s: %w", mirror, err)
+			continue
+		}
+
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2*1024*1024))
+		resp.Body.Close()
+
+		if resp.StatusCode != 200 {
+			lastErr = fmt.Errorf("%s HTTP %d", mirror, resp.StatusCode)
+			continue
+		}
+
+		match := getLinkRe.FindSubmatch(body)
+		if len(match) < 2 {
+			lastErr = fmt.Errorf("%s: no get.php link for md5=%s", mirror, md5)
+			continue
+		}
+
+		return fmt.Sprintf("%s/%s", mirror, string(match[1])), nil
+	}
+	return "", lastErr
 }
 
 // DownloadFromURL downloads a file from any direct URL.
