@@ -299,3 +299,117 @@ func TestIsNZBURL_NewznabPattern(t *testing.T) {
 		t.Error("expected &t=get& in URL")
 	}
 }
+
+// --- Tests for issue #7: better Prowlarr error messages ---
+
+// TestProwlarr_HTMLResponse — when Prowlarr returns HTML instead of JSON (e.g.,
+// reverse proxy intercept or wrong API key), the error should be descriptive
+// rather than the cryptic "invalid character '<'" JSON decode error.
+func TestProwlarr_HTMLResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("<!DOCTYPE html>\n<html><body>Login required</body></html>"))
+	}))
+	defer server.Close()
+
+	cfg := &config.Config{ProwlarrURL: server.URL, ProwlarrAPIKey: "key"}
+	p := NewProwlarr(cfg, server.Client(), "main")
+
+	_, err := p.doSearch(context.Background(), prowlarrSearchParams{query: "test", limit: 10})
+	if err == nil {
+		t.Fatal("expected error for HTML response, got nil")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "HTML") {
+		t.Errorf("error should mention HTML, got: %v", err)
+	}
+	if !strings.Contains(msg, "reverse proxy") && !strings.Contains(msg, "API key") {
+		t.Errorf("error should suggest cause (proxy/API key), got: %v", err)
+	}
+}
+
+func TestProwlarr_HTMLWithLeadingWhitespace(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("\n\n  <html><body>error</body></html>"))
+	}))
+	defer server.Close()
+
+	cfg := &config.Config{ProwlarrURL: server.URL, ProwlarrAPIKey: "key"}
+	p := NewProwlarr(cfg, server.Client(), "main")
+
+	_, err := p.doSearch(context.Background(), prowlarrSearchParams{query: "test", limit: 10})
+	if err == nil {
+		t.Fatal("expected error for HTML response, got nil")
+	}
+	if !strings.Contains(err.Error(), "HTML") {
+		t.Errorf("error should mention HTML, got: %v", err)
+	}
+}
+
+// TestProwlarr_RealAuthelia401 — Authelia returns an HTML 401 login page when
+// the session cookie is missing. Prowlarr also uses this pattern for some
+// reverse proxy setups.
+func TestProwlarr_RealAuthelia401(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusOK) // Authelia actually returns 200 with HTML login page
+		_, _ = w.Write([]byte(`<!DOCTYPE html><html><head><title>Authelia</title></head><body><div id="authelia">...</div></body></html>`))
+	}))
+	defer server.Close()
+
+	cfg := &config.Config{ProwlarrURL: server.URL, ProwlarrAPIKey: "key"}
+	p := NewProwlarr(cfg, server.Client(), "main")
+
+	_, err := p.doSearch(context.Background(), prowlarrSearchParams{query: "test", limit: 10})
+	if err == nil {
+		t.Fatal("expected error for Authelia HTML response")
+	}
+	if !strings.Contains(err.Error(), "HTML") {
+		t.Errorf("error should say HTML, got: %v", err)
+	}
+}
+
+// TestProwlarr_ValidJSONStillWorks — sanity check that the new body-read +
+// HTML-detection path doesn't break the success case.
+func TestProwlarr_ValidJSONStillWorks(t *testing.T) {
+	items := []prowlarrItem{
+		{Title: "A Book", Size: 1024 * 1024, Seeders: 10, Protocol: "torrent"},
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(items)
+	}))
+	defer server.Close()
+
+	cfg := &config.Config{ProwlarrURL: server.URL, ProwlarrAPIKey: "key"}
+	p := NewProwlarr(cfg, server.Client(), "main")
+
+	results, err := p.doSearch(context.Background(), prowlarrSearchParams{query: "a book", limit: 10})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Errorf("expected 1 result, got %d", len(results))
+	}
+}
+
+// TestProwlarr_TruncatedJSON — server starts sending JSON but cuts off mid-stream.
+// Should return a clear error mentioning decode failure, not panic.
+func TestProwlarr_TruncatedJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`[{"title":"Partial`)) // truncated JSON
+	}))
+	defer server.Close()
+
+	cfg := &config.Config{ProwlarrURL: server.URL, ProwlarrAPIKey: "key"}
+	p := NewProwlarr(cfg, server.Client(), "main")
+
+	_, err := p.doSearch(context.Background(), prowlarrSearchParams{query: "test", limit: 10})
+	if err == nil {
+		t.Fatal("expected error for truncated JSON")
+	}
+	if !strings.Contains(err.Error(), "decode") {
+		t.Errorf("expected decode error, got: %v", err)
+	}
+}
