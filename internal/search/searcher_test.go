@@ -13,8 +13,11 @@ func TestIsMultilangSource(t *testing.T) {
 	}{
 		{"flibusta", true},
 		{"zlibrary", true},
+		{"booktracker", true},
+		{"booktracker_audiobook", true},
 		{"annas", false},
 		{"torrent", false},
+		{"tpb", false},
 		{"gutenberg", false},
 		{"openlibrary", false},
 		{"mangadex", false},
