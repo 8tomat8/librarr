@@ -143,7 +143,8 @@ func TestFilterResults(t *testing.T) {
 			{Source: "flibusta", Title: "Книга на русском"},
 			{Source: "annas", Title: "Good English Book"},
 		}
-		filtered := FilterResults(input, "book", false)
+		// Use empty query so titleRelevant passes for all titles.
+		filtered := FilterResults(input, "", false)
 		if len(filtered) != 2 {
 			t.Errorf("expected 2 results with filter disabled, got %d", len(filtered))
 		}
@@ -156,7 +157,8 @@ func TestFilterResults(t *testing.T) {
 			{Source: "annas", Title: "Russian Edition Book"},
 			{Source: "annas", Title: "Good English Book"},
 		}
-		filtered := FilterResults(input, "book", true)
+		// Use empty query so titleRelevant passes for all titles.
+		filtered := FilterResults(input, "", true)
 		// flibusta and zlibrary results pass through (multilang sources bypass filter)
 		// "Russian Edition Book" from annas is filtered (foreign keyword + not multilang source)
 		// "Good English Book" from annas passes

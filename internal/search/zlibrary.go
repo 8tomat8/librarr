@@ -215,7 +215,7 @@ func (z *ZLibrary) Search(ctx context.Context, query string) ([]models.SearchRes
 
 	req, err := http.NewRequestWithContext(ctx, "POST", searchURL, bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("zlibrary search request: %w", err)
+		return nil, fmt.Errorf("zlibrary search request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", z.cfg.UserAgent)
