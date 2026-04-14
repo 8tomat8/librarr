@@ -192,7 +192,7 @@ func FilterResults(results []models.SearchResult, query string, foreignLangFilte
 // Results from these sources bypass the foreign-language filter automatically.
 func isMultilangSource(source string) bool {
 	switch source {
-	case "flibusta", "zlibrary":
+	case "flibusta", "zlibrary", "booktracker", "booktracker_audiobook":
 		return true
 	}
 	return false
