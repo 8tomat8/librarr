@@ -15,7 +15,33 @@ import (
 	"github.com/JeremiahM37/librarr/internal/models"
 )
 
-const tpbAPIBase = "https://apibay.org"
+// tpbAPIBase is the apibay.org production endpoint. It is a var rather than
+// a const so tests can redirect to an httptest server.
+var tpbAPIBase = "https://apibay.org"
+
+// tpbTrackers are the trackers TPB itself announces on its site, appended to
+// magnet URLs so qBittorrent can find peers. Magnets built from info_hash
+// alone have no trackers and will never resolve.
+var tpbTrackers = []string{
+	"udp://tracker.opentrackr.org:1337/announce",
+	"udp://tracker.openbittorrent.com:6969/announce",
+	"udp://tracker.torrent.eu.org:451/announce",
+	"udp://open.stealth.si:80/announce",
+	"udp://exodus.desync.com:6969/announce",
+	"udp://tracker.coppersurfer.tk:6969/announce",
+}
+
+// buildMagnet constructs a magnet URL with well-known trackers appended so
+// the torrent can find peers without further metadata fetch.
+func buildMagnet(infoHash, displayName string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "magnet:?xt=urn:btih:%s&dn=%s", infoHash, url.QueryEscape(displayName))
+	for _, tr := range tpbTrackers {
+		b.WriteString("&tr=")
+		b.WriteString(url.QueryEscape(tr))
+	}
+	return b.String()
+}
 
 // ThePirateBay searches ThePirateBay via the apibay.org JSON API.
 // It supports both ebook (cat 601) and audiobook (cat 102) categories.
@@ -159,11 +185,9 @@ func (t *ThePirateBay) searchCategory(ctx context.Context, query, category strin
 
 		sizeBytes, _ := strconv.ParseInt(item.Size, 10, 64)
 		sizeHuman := HumanSize(sizeBytes)
+		leechers, _ := strconv.Atoi(item.Leechers)
 
-		magnetURL := fmt.Sprintf("magnet:?xt=urn:btih:%s&dn=%s",
-			item.InfoHash,
-			url.QueryEscape(name),
-		)
+		magnetURL := buildMagnet(item.InfoHash, name)
 
 		results = append(results, models.SearchResult{
 			Source:      sourceName,
@@ -172,7 +196,7 @@ func (t *ThePirateBay) searchCategory(ctx context.Context, query, category strin
 			MagnetURL:   magnetURL,
 			InfoHash:    item.InfoHash,
 			Seeders:     seeders,
-			Leechers:    0,
+			Leechers:    leechers,
 			Size:        sizeBytes,
 			SizeHuman:   sizeHuman,
 			Indexer:     "ThePirateBay",

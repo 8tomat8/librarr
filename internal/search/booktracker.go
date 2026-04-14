@@ -106,29 +106,31 @@ func (b *BookTracker) login() error {
 		return fmt.Errorf("BookTracker login HTTP %d", resp.StatusCode)
 	}
 
-	// Verify we got session cookies.
+	// Verify we got an authenticated session cookie. phpBB sets
+	// *_sid cookies for anonymous visitors too, so we require one of the
+	// persistent-login cookies that only appear after a real login.
+	// Known names: phpbb2mysql_data, phpbb3_data, bb_data, bb_t (autologin token).
 	parsedURL, _ := url.Parse(b.cfg.BookTrackerURL)
 	cookies := b.authClient.Jar.Cookies(parsedURL)
 	hasSession := false
 	for _, c := range cookies {
-		if strings.Contains(c.Name, "sid") || strings.Contains(c.Name, "session") || strings.Contains(c.Name, "phpbb") {
-			hasSession = true
-			break
+		n := strings.ToLower(c.Name)
+		if strings.Contains(n, "_data") || strings.Contains(n, "bb_t") ||
+			strings.HasSuffix(n, "_u") || strings.HasSuffix(n, "_k") {
+			if c.Value != "" && c.Value != "0" && c.Value != "a%3A0%3A%7B%7D" {
+				hasSession = true
+				break
+			}
 		}
 	}
 
-	if !hasSession && len(cookies) > 0 {
-		// Some phpBB sites set different cookie names; accept any cookies as login success.
-		hasSession = true
-	}
-
 	if !hasSession {
-		return fmt.Errorf("BookTracker login failed: no session cookie received")
+		return fmt.Errorf("BookTracker login failed: no authenticated session cookie received (check credentials)")
 	}
 
 	b.loggedIn = true
 	b.loginTime = time.Now()
-	slog.Info("BookTracker login successful")
+	slog.Debug("BookTracker login successful")
 	return nil
 }
 
@@ -253,26 +255,17 @@ func (b *BookTracker) parseSearchResults(doc *goquery.Document, baseURL string) 
 			sizeHuman = m[1] + " " + m[2]
 		}
 
-		// Extract seeders from the row (typically in a small span or cell).
+		// Extract seeders only from cells explicitly tagged as seed columns.
+		// A looser fallback (scan every <td> for a number) mis-reads year
+		// and file-count cells as seeder counts, so we leave seeders at 0
+		// when the known selectors don't match rather than guess.
 		seeders := 0
-		seedEl := s.Find("td.seedLeach, td.leechseed, .seedmed, .seed, .leech")
+		seedEl := s.Find("td.seedLeach, td.leechseed, .seedmed, .seed, .leech, b.seedmed, span.seedmed")
 		if seedEl.Length() > 0 {
-			seedText := seedEl.First().Text()
-			if m := btSeedRe.FindStringSubmatch(strings.TrimSpace(seedText)); len(m) > 1 {
+			seedText := strings.TrimSpace(seedEl.First().Text())
+			if m := btSeedRe.FindStringSubmatch(seedText); len(m) > 1 {
 				seeders, _ = strconv.Atoi(m[1])
 			}
-		}
-		if seeders < 1 {
-			// phpBB2 trackers often show seeders in a specific column position.
-			// Try finding a number in the last few cells.
-			s.Find("td").Each(func(j int, td *goquery.Selection) {
-				text := strings.TrimSpace(td.Text())
-				if m := btSeedRe.FindStringSubmatch(text); len(m) > 1 {
-					if n, _ := strconv.Atoi(m[1]); n > seeders && n < 10000 {
-						seeders = n
-					}
-				}
-			})
 		}
 
 		viewURL := baseURL + "/viewtopic.php?t=" + topicID
