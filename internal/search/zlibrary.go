@@ -152,7 +152,7 @@ func (z *ZLibrary) login(ctx context.Context) error {
 
 	z.loggedIn = true
 	z.sessionTS = time.Now()
-	slog.Info("z-library login successful", "email", z.cfg.ZLibraryEmail)
+	slog.Debug("z-library login successful")
 
 	// Resolve personal download domain.
 	if err := z.resolveDomains(ctx); err != nil {
