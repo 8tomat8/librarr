@@ -2,7 +2,31 @@ package search
 
 import (
 	"testing"
+
+	"github.com/JeremiahM37/librarr/internal/models"
 )
+
+func TestIsMultilangSource(t *testing.T) {
+	tests := []struct {
+		source   string
+		expected bool
+	}{
+		{"flibusta", true},
+		{"zlibrary", true},
+		{"annas", false},
+		{"torrent", false},
+		{"gutenberg", false},
+		{"openlibrary", false},
+		{"mangadex", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.source, func(t *testing.T) {
+			if got := isMultilangSource(tt.source); got != tt.expected {
+				t.Errorf("isMultilangSource(%q) = %v, want %v", tt.source, got, tt.expected)
+			}
+		})
+	}
+}
 
 func TestIsForeignTitle(t *testing.T) {
 	tests := []struct {
@@ -84,7 +108,7 @@ func TestExtractWords(t *testing.T) {
 }
 
 func TestFilterResults(t *testing.T) {
-	t.Run("removes foreign titles", func(t *testing.T) {
+	t.Run("removes foreign titles when filter enabled", func(t *testing.T) {
 		results := []struct {
 			title   string
 			foreign bool
@@ -111,6 +135,52 @@ func TestFilterResults(t *testing.T) {
 			if got != r.foreign {
 				t.Errorf("isForeignTitle(%q) = %v, want %v", r.title, got, r.foreign)
 			}
+		}
+	})
+
+	t.Run("preserves foreign titles when filter disabled", func(t *testing.T) {
+		input := []models.SearchResult{
+			{Source: "flibusta", Title: "Книга на русском"},
+			{Source: "annas", Title: "Good English Book"},
+		}
+		filtered := FilterResults(input, "book", false)
+		if len(filtered) != 2 {
+			t.Errorf("expected 2 results with filter disabled, got %d", len(filtered))
+		}
+	})
+
+	t.Run("multilang sources bypass foreign filter", func(t *testing.T) {
+		input := []models.SearchResult{
+			{Source: "flibusta", Title: "Книга на русском"},
+			{Source: "zlibrary", Title: "Книга по-русски"},
+			{Source: "annas", Title: "Russian Edition Book"},
+			{Source: "annas", Title: "Good English Book"},
+		}
+		filtered := FilterResults(input, "book", true)
+		// flibusta and zlibrary results pass through (multilang sources bypass filter)
+		// "Russian Edition Book" from annas is filtered (foreign keyword + not multilang source)
+		// "Good English Book" from annas passes
+		if len(filtered) != 3 {
+			t.Errorf("expected 3 results (2 multilang + 1 english), got %d", len(filtered))
+		}
+		for _, r := range filtered {
+			if r.Source == "annas" && r.Title == "Russian Edition Book" {
+				t.Errorf("foreign title from non-multilang source should be filtered: %s", r.Title)
+			}
+		}
+	})
+
+	t.Run("non-multilang source foreign titles removed when filter enabled", func(t *testing.T) {
+		input := []models.SearchResult{
+			{Source: "annas", Title: "Russian Edition Book"},
+			{Source: "annas", Title: "Good English Book"},
+		}
+		filtered := FilterResults(input, "book", true)
+		if len(filtered) != 1 {
+			t.Errorf("expected 1 result (english only from non-multilang), got %d", len(filtered))
+		}
+		if len(filtered) > 0 && filtered[0].Title != "Good English Book" {
+			t.Errorf("expected English book, got %s", filtered[0].Title)
 		}
 	})
 }

@@ -92,6 +92,19 @@ type Config struct {
 	QBPriority  int
 	SABPriority int
 
+	// Flibusta
+	FlibustaURL     string
+	FlibustaEnabled bool
+
+	// Z-Library
+	ZLibraryURL     string
+	ZLibraryEmail    string
+	ZLibraryPassword string
+	ZLibraryEnabled  bool
+
+	// Search filtering
+	ForeignLangFilter bool // filter out non-English titles (default: true for backward compat)
+
 	// Feature toggles
 	RateLimitEnabled bool
 	MetricsEnabled   bool
@@ -225,6 +238,16 @@ func Load() *Config {
 		WebNovelEnabled:  getEnvBool("WEBNOVEL_ENABLED", true),
 		MangaDexEnabled:  getEnvBool("MANGADEX_ENABLED", true),
 
+		FlibustaURL:     getEnv("FLIBUSTA_URL", ""),
+		FlibustaEnabled: getEnvBool("FLIBUSTA_ENABLED", false),
+
+		ZLibraryURL:     getEnv("ZLIBRARY_URL", ""),
+		ZLibraryEmail:    getEnv("ZLIBRARY_EMAIL", ""),
+		ZLibraryPassword: getEnv("ZLIBRARY_PASSWORD", ""),
+		ZLibraryEnabled:  getEnvBool("ZLIBRARY_ENABLED", false),
+
+		ForeignLangFilter: getEnvBool("FOREIGN_LANG_FILTER", true),
+
 		LNCrawlContainer: getEnv("LNCRAWL_CONTAINER", ""),
 
 		SettingsFile: getEnv("SETTINGS_FILE", "/data/settings.json"),
@@ -323,6 +346,16 @@ func (c *Config) HasDeluge() bool {
 // HasTransmission returns true if Transmission is configured.
 func (c *Config) HasTransmission() bool {
 	return c.TransmissionURL != ""
+}
+
+// HasFlibusta returns true if Flibusta is configured and enabled.
+func (c *Config) HasFlibusta() bool {
+	return c.FlibustaEnabled && c.FlibustaURL != ""
+}
+
+// HasZLibrary returns true if Z-Library is configured and enabled.
+func (c *Config) HasZLibrary() bool {
+	return c.ZLibraryEnabled && c.ZLibraryEmail != "" && c.ZLibraryPassword != ""
 }
 
 func getEnv(key, fallback string) string {

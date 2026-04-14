@@ -159,6 +159,10 @@ func sourcePriority(r models.SearchResult) int {
 		return 3
 	case "mangadex", "webnovel":
 		return 2
+	case "flibusta":
+		return 1 // Direct download, popular for Russian books
+	case "zlibrary":
+		return 1 // Direct download, large catalog
 	default:
 		return 2
 	}

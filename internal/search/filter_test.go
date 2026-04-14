@@ -194,6 +194,8 @@ func TestSourcePriority(t *testing.T) {
 		{models.SearchResult{Source: "openlibrary"}, 3},
 		{models.SearchResult{Source: "mangadex"}, 2},
 		{models.SearchResult{Source: "webnovel"}, 2},
+		{models.SearchResult{Source: "flibusta"}, 1},
+		{models.SearchResult{Source: "zlibrary"}, 1},
 	}
 
 	for _, tt := range tests {

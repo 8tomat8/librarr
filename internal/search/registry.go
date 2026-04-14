@@ -60,4 +60,12 @@ func init() {
 	RegisterSource(func(cfg *config.Config, client *http.Client) Searcher {
 		return NewWebNovel(cfg, client)
 	})
+	// Flibusta (Russian book source)
+	RegisterSource(func(cfg *config.Config, client *http.Client) Searcher {
+		return NewFlibusta(cfg, client)
+	})
+	// Z-Library
+	RegisterSource(func(cfg *config.Config, client *http.Client) Searcher {
+		return NewZLibrary(cfg, client)
+	})
 }
