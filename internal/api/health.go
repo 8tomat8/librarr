@@ -96,6 +96,9 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		"webnovel_enabled":   s.cfg.WebNovelEnabled,
 		"mangadex_enabled":   s.cfg.MangaDexEnabled,
 		"audiobooks":         hasAudiobookSearch,
+		"foreign_lang_filter": s.searchMgr.ForeignLangFilterEnabled(),
+		"flibusta_enabled":   s.cfg.HasFlibusta(),
+		"zlibrary_enabled":   s.cfg.HasZLibrary(),
 	}
 
 	// OIDC config (safe to expose — no secrets).

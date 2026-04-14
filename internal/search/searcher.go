@@ -30,15 +30,33 @@ type Manager struct {
 	cfg     *config.Config
 	sources []Searcher
 	health  *HealthTracker
+
+	filterMu          sync.RWMutex
+	foreignLangFilter bool // runtime-configurable via UI; initialised from config
 }
 
 // NewManager creates a search manager with the given sources.
 func NewManager(cfg *config.Config, sources []Searcher, health *HealthTracker) *Manager {
 	return &Manager{
-		cfg:     cfg,
-		sources: sources,
-		health:  health,
+		cfg:               cfg,
+		sources:           sources,
+		health:            health,
+		foreignLangFilter: cfg.ForeignLangFilter,
 	}
+}
+
+// SetForeignLangFilter updates the foreign-language filter at runtime.
+func (m *Manager) SetForeignLangFilter(enabled bool) {
+	m.filterMu.Lock()
+	defer m.filterMu.Unlock()
+	m.foreignLangFilter = enabled
+}
+
+// ForeignLangFilterEnabled returns the current foreign-language filter state.
+func (m *Manager) ForeignLangFilterEnabled() bool {
+	m.filterMu.RLock()
+	defer m.filterMu.RUnlock()
+	return m.foreignLangFilter
 }
 
 // Search runs a query against all enabled sources for the given tab, returning combined results.
@@ -97,7 +115,7 @@ func (m *Manager) SearchWithAuthor(ctx context.Context, tab, query, author strin
 	wg.Wait()
 
 	// Apply relevance and foreign-language filtering.
-	results = FilterResults(results, query, m.cfg.ForeignLangFilter)
+	results = FilterResults(results, query, m.ForeignLangFilterEnabled())
 	// Apply suspicious keyword, seed, size, dedup, and sorting filters.
 	results = FilterAndSortResults(results, query, m.cfg.MinTorrentSizeBytes, m.cfg.MaxTorrentSizeBytes)
 

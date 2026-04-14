@@ -39,6 +39,10 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, _ *http.Request) {
 		"webnovel_enabled":    s.cfg.WebNovelEnabled,
 		"mangadex_enabled":    s.cfg.MangaDexEnabled,
 		"max_retries":         s.cfg.MaxRetries,
+		"foreign_lang_filter": s.searchMgr.ForeignLangFilterEnabled(),
+		"flibusta_enabled":    s.cfg.FlibustaEnabled,
+		"flibusta_url":        s.cfg.FlibustaURL,
+		"zlibrary_enabled":    s.cfg.ZLibraryEnabled,
 	}
 
 	// Merge defaults under settings (settings override).
@@ -109,6 +113,14 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 
 	username, _ := r.Context().Value(ctxUsername).(string)
 	s.db.LogActivity(username, "settings_changed", "settings", "Settings updated")
+
+	// Apply runtime-updatable settings immediately.
+	if v, ok := data["foreign_lang_filter"]; ok {
+		if b, ok := v.(bool); ok {
+			s.searchMgr.SetForeignLangFilter(b)
+			slog.Info("foreign language filter updated", "enabled", b)
+		}
+	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true})
 }
