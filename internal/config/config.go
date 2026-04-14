@@ -102,6 +102,15 @@ type Config struct {
 	ZLibraryPassword string
 	ZLibraryEnabled  bool
 
+	// ThePirateBay
+	TPBEnabled bool
+
+	// BookTracker
+	BookTrackerURL     string
+	BookTrackerUser    string
+	BookTrackerPass    string
+	BookTrackerEnabled bool
+
 	// Search filtering
 	ForeignLangFilter bool // filter out non-English titles (default: true for backward compat)
 
@@ -246,6 +255,13 @@ func Load() *Config {
 		ZLibraryPassword: getEnv("ZLIBRARY_PASSWORD", ""),
 		ZLibraryEnabled:  getEnvBool("ZLIBRARY_ENABLED", false),
 
+		TPBEnabled: getEnvBool("TPB_ENABLED", false),
+
+		BookTrackerURL:     getEnv("BOOKTRACKER_URL", ""),
+		BookTrackerUser:    getEnv("BOOKTRACKER_USER", ""),
+		BookTrackerPass:    getEnv("BOOKTRACKER_PASS", ""),
+		BookTrackerEnabled: getEnvBool("BOOKTRACKER_ENABLED", false),
+
 		ForeignLangFilter: getEnvBool("FOREIGN_LANG_FILTER", true),
 
 		LNCrawlContainer: getEnv("LNCRAWL_CONTAINER", ""),
@@ -356,6 +372,11 @@ func (c *Config) HasFlibusta() bool {
 // HasZLibrary returns true if Z-Library is configured and enabled.
 func (c *Config) HasZLibrary() bool {
 	return c.ZLibraryEnabled && c.ZLibraryEmail != "" && c.ZLibraryPassword != ""
+}
+
+// HasBookTracker returns true if BookTracker is configured and enabled.
+func (c *Config) HasBookTracker() bool {
+	return c.BookTrackerEnabled && c.BookTrackerURL != "" && c.BookTrackerUser != "" && c.BookTrackerPass != ""
 }
 
 func getEnv(key, fallback string) string {

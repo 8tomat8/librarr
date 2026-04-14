@@ -73,7 +73,9 @@ func FilterAndSortResults(results []models.SearchResult, query string, minSize, 
 		}
 
 		// Torrent-specific filters.
-		isTorrent := r.Source == "torrent" || r.Source == "prowlarr_manga" || r.Source == "nyaa_manga"
+		isTorrent := r.Source == "torrent" || r.Source == "prowlarr_manga" || r.Source == "nyaa_manga" ||
+			r.Source == "tpb" || r.Source == "tpb_audiobook" ||
+			r.Source == "booktracker" || r.Source == "booktracker_audiobook"
 		isABB := r.Source == "audiobook"
 
 		if isTorrent {
@@ -163,6 +165,13 @@ func sourcePriority(r models.SearchResult) int {
 		return 1 // Direct download, popular for Russian books
 	case "zlibrary":
 		return 1 // Direct download, large catalog
+	case "tpb", "tpb_audiobook":
+		if r.Seeders > 0 {
+			return 1
+		}
+		return 2
+	case "booktracker", "booktracker_audiobook":
+		return 1 // Russian book tracker, direct torrent download
 	default:
 		return 2
 	}
