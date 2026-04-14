@@ -23,7 +23,7 @@ Librarr searches 13 sources simultaneously, scores results by confidence, and au
 
 ### Search and Scoring
 
-- **13 search sources** in one UI (see table below)
+- **17 search sources** in one UI (see table below)
 - **Confidence scoring** -- 0-100 score with breakdown (title match, author match, format, seeders, file size)
 - **Quality profiles** -- define format ranking and preferred attributes, auto-upgrade existing downloads
 - **Release profiles** -- preferred and excluded words for fine-grained filtering
@@ -108,6 +108,10 @@ Librarr searches 13 sources simultaneously, scores results by confidence, and au
 | MangaDex | Direct download | Manga chapters |
 | Nyaa | Torrent | Manga, light novels |
 | Web Novels (7 sites) | Scraping (lncrawl) | Web novels compiled to EPUB |
+| Flibusta | Direct download | Russian-language ebooks (OPDS) |
+| Z-Library | Direct download | Ebooks (requires account, daily limit) |
+| ThePirateBay | Torrent | Ebooks, audiobooks (via apibay.org) |
+| BookTracker | Torrent | Russian books and audiobooks (requires account) |
 
 ## Quick Start
 
