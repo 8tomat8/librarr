@@ -198,6 +198,11 @@ func TestIsExempt(t *testing.T) {
 		{"/api/download", false},
 		{"/api/library", false},
 		{"/api/users", false},
+		// Prowlarr's indexer-discovery probe hits bare /api — must be exempt
+		// because the Torznab handler does its own apikey check. But the
+		// exemption MUST be exact-path only; any /api/... JSON endpoint
+		// must still require auth.
+		{"/api", true},
 	}
 
 	for _, tt := range tests {
