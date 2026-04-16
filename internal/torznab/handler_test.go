@@ -145,6 +145,13 @@ func TestHandler_MissingQueryReturnsProbeResponse(t *testing.T) {
 		t.Errorf("probe item guid must include 'librarr-placeholder-' sentinel: %s",
 			body[:min(400, len(body))])
 	}
+	// Prowlarr's RSS validator rejects items without a pubDate — must be
+	// present and RFC-1123 formatted. Otherwise save fails with "Indexer
+	// feed is not supported: Each item in the RSS feed must have a pubDate".
+	if !strings.Contains(body, "<pubDate>") {
+		t.Errorf("probe item must include pubDate (Prowlarr requirement): %s",
+			body[:min(400, len(body))])
+	}
 }
 
 // TestHandler_BareSearchTypesAllProbe — every search-family t= value

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/JeremiahM37/librarr/internal/config"
 	"github.com/JeremiahM37/librarr/internal/models"
@@ -146,12 +147,15 @@ func (h *Handler) handleSearch(w http.ResponseWriter, r *http.Request, tab strin
 // the "librarr-placeholder-" guid and skip it. Humans hitting the URL see a
 // valid feed with a clear explanation.
 func (h *Handler) writeProbeResponse(w http.ResponseWriter, baseURL string) {
+	// Prowlarr validates that every item has a valid RFC-1123 pubDate —
+	// a missing pubDate fails with "Indexer feed is not supported".
 	items := []models.TorznabItem{{
 		Title:    "Librarr Torznab endpoint — pass ?q=<title> to search",
 		GUID:     fmt.Sprintf("librarr-placeholder-%s", baseURL),
 		Size:     0,
 		Link:     baseURL + "/torznab/api?t=caps",
 		Category: "7000",
+		PubDate:  time.Now().UTC().Format(time.RFC1123Z),
 	}}
 	rss := models.TorznabRSS{
 		Version: "2.0",
