@@ -112,10 +112,14 @@ func TestHandler_UnknownFunction(t *testing.T) {
 	}
 }
 
-// TestHandler_MissingQueryReturnsEmptyFeed — Prowlarr's RSS health check
-// polls t=search with no query. Returning 400 breaks indexer-health
-// monitoring (reported in issue #20). Empty feed is the Torznab norm.
-func TestHandler_MissingQueryReturnsEmptyFeed(t *testing.T) {
+// TestHandler_MissingQueryReturnsProbeResponse — Prowlarr's RSS health check
+// polls t=search with no query and REQUIRES ≥1 item (for Generic Torznab
+// indexers) to confirm the integration works. Returning 400 broke save
+// entirely; returning a truly empty <rss> broke Prowlarr's validator.
+// Compromise: a single labeled placeholder item with a guid prefixed
+// "librarr-placeholder-" so downstream *arr apps won't try to grab it.
+// Regression guard for issue #20.
+func TestHandler_MissingQueryReturnsProbeResponse(t *testing.T) {
 	h := newTestHandler("")
 
 	req := httptest.NewRequest("GET", "/torznab/api?t=search", nil)
@@ -123,23 +127,30 @@ func TestHandler_MissingQueryReturnsEmptyFeed(t *testing.T) {
 	h.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
-		t.Errorf("expected 200 (empty feed), got %d", w.Code)
+		t.Errorf("expected 200, got %d", w.Code)
 	}
 	body := w.Body.String()
 	if !strings.Contains(body, "<rss") {
 		t.Errorf("expected RSS feed, got: %s", body[:min(200, len(body))])
 	}
-	// Health probe should get a clean empty feed, not an error element.
 	if strings.Contains(body, "<error") {
-		t.Errorf("expected no <error> in empty-feed response: %s", body[:min(300, len(body))])
+		t.Errorf("expected no <error> element: %s", body[:min(300, len(body))])
+	}
+	if !strings.Contains(body, "<item>") {
+		t.Errorf("Prowlarr requires ≥1 item in the probe response, got 0: %s",
+			body[:min(400, len(body))])
+	}
+	// Downstream *arr apps key on this prefix to avoid auto-grabbing probe items.
+	if !strings.Contains(body, "librarr-placeholder-") {
+		t.Errorf("probe item guid must include 'librarr-placeholder-' sentinel: %s",
+			body[:min(400, len(body))])
 	}
 }
 
-// TestHandler_BareSearchTypesAllAcceptEmptyQuery — every search-family t=
-// value should return an empty feed (not 400) when the query is missing.
-// This matches every other real Torznab indexer's behavior and keeps
-// Prowlarr's periodic health checks happy.
-func TestHandler_BareSearchTypesAllAcceptEmptyQuery(t *testing.T) {
+// TestHandler_BareSearchTypesAllProbe — every search-family t= value
+// should return the probe response (not 400) when q is missing. This
+// matches Prowlarr's discovery flow across search/book/audio types.
+func TestHandler_BareSearchTypesAllProbe(t *testing.T) {
 	h := newTestHandler("")
 	for _, fn := range []string{"search", "book", "audio"} {
 		t.Run(fn, func(t *testing.T) {
@@ -148,6 +159,9 @@ func TestHandler_BareSearchTypesAllAcceptEmptyQuery(t *testing.T) {
 			h.ServeHTTP(w, req)
 			if w.Code != http.StatusOK {
 				t.Errorf("t=%s empty query: expected 200, got %d", fn, w.Code)
+			}
+			if !strings.Contains(w.Body.String(), "<item>") {
+				t.Errorf("t=%s empty query should include ≥1 item for Prowlarr probe", fn)
 			}
 		})
 	}

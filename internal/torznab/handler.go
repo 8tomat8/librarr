@@ -87,12 +87,22 @@ func (h *Handler) handleSearch(w http.ResponseWriter, r *http.Request, tab strin
 	}
 
 	if query == "" {
-		// Prowlarr polls `t=search` with no query as an RSS health check —
-		// it expects an empty feed, not an error. Returning 400 breaks
-		// indexer health monitoring. Empty results is the Torznab norm for
-		// "no matches" and is what every real indexer does in this case.
+		// Prowlarr polls `t=search` with no query during indexer discovery.
+		// Returning an empty feed is valid Torznab but fails Prowlarr's
+		// "Generic Torznab" validator (needs ≥1 item). Returning results
+		// from all 13 sources would be slow (~10s) for a health probe.
+		// Instead: emit a single placeholder item describing the endpoint.
+		// - guid prefixed "librarr-placeholder-" so downstream *arr apps
+		//   won't queue it for download.
+		// - no MagnetURL / DownloadURL so there's nothing to grab.
+		// - humans poking the URL still see a valid-looking feed.
 		slog.Info("torznab empty search (health probe)", "tab", tab, "remote", r.RemoteAddr)
-		h.writeEmptyResults(w)
+		scheme := "http"
+		if r.TLS != nil {
+			scheme = "https"
+		}
+		baseURL := fmt.Sprintf("%s://%s", scheme, r.Host)
+		h.writeProbeResponse(w, baseURL)
 		return
 	}
 
@@ -123,6 +133,35 @@ func (h *Handler) handleSearch(w http.ResponseWriter, r *http.Request, tab strin
 		},
 	}
 
+	w.Header().Set("Content-Type", "application/xml; charset=UTF-8")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(xml.Header))
+	enc := xml.NewEncoder(w)
+	enc.Indent("", "  ")
+	enc.Encode(rss)
+}
+
+// writeProbeResponse returns a single-item feed for empty search probes.
+// The item is a labeled placeholder — downstream *arr apps should recognize
+// the "librarr-placeholder-" guid and skip it. Humans hitting the URL see a
+// valid feed with a clear explanation.
+func (h *Handler) writeProbeResponse(w http.ResponseWriter, baseURL string) {
+	items := []models.TorznabItem{{
+		Title:    "Librarr Torznab endpoint — pass ?q=<title> to search",
+		GUID:     fmt.Sprintf("librarr-placeholder-%s", baseURL),
+		Size:     0,
+		Link:     baseURL + "/torznab/api?t=caps",
+		Category: "7000",
+	}}
+	rss := models.TorznabRSS{
+		Version: "2.0",
+		Xmlns:   "http://torznab.com/schemas/2015/feed",
+		Channel: models.TorznabChannel{
+			Title:       "Librarr",
+			Description: "Book search endpoint",
+			Items:       items,
+		},
+	}
 	w.Header().Set("Content-Type", "application/xml; charset=UTF-8")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(xml.Header))
