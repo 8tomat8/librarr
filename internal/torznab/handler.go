@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/JeremiahM37/librarr/internal/config"
 	"github.com/JeremiahM37/librarr/internal/models"
@@ -53,6 +54,15 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// ServeHTTPAlias handles the bare /api path that Prowlarr probes during
+// indexer discovery (it expects a Torznab endpoint at /api, not
+// /torznab/api). Same semantics as ServeHTTP — this just accepts the alias
+// path. Mounted exactly on /api (not /api/...) so it doesn't shadow the
+// main JSON API tree.
+func (h *Handler) ServeHTTPAlias(w http.ResponseWriter, r *http.Request) {
+	h.ServeHTTP(w, r)
+}
+
 func (h *Handler) handleCaps(w http.ResponseWriter, _ *http.Request) {
 	caps := BuildCaps()
 	w.Header().Set("Content-Type", "application/xml; charset=UTF-8")
@@ -78,7 +88,22 @@ func (h *Handler) handleSearch(w http.ResponseWriter, r *http.Request, tab strin
 	}
 
 	if query == "" {
-		h.writeError(w, "100", "Missing parameter (q)", http.StatusBadRequest)
+		// Prowlarr polls `t=search` with no query during indexer discovery.
+		// Returning an empty feed is valid Torznab but fails Prowlarr's
+		// "Generic Torznab" validator (needs ≥1 item). Returning results
+		// from all 13 sources would be slow (~10s) for a health probe.
+		// Instead: emit a single placeholder item describing the endpoint.
+		// - guid prefixed "librarr-placeholder-" so downstream *arr apps
+		//   won't queue it for download.
+		// - no MagnetURL / DownloadURL so there's nothing to grab.
+		// - humans poking the URL still see a valid-looking feed.
+		slog.Info("torznab empty search (health probe)", "tab", tab, "remote", r.RemoteAddr)
+		scheme := "http"
+		if r.TLS != nil {
+			scheme = "https"
+		}
+		baseURL := fmt.Sprintf("%s://%s", scheme, r.Host)
+		h.writeProbeResponse(w, baseURL)
 		return
 	}
 
@@ -109,6 +134,56 @@ func (h *Handler) handleSearch(w http.ResponseWriter, r *http.Request, tab strin
 		},
 	}
 
+	w.Header().Set("Content-Type", "application/xml; charset=UTF-8")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(xml.Header))
+	enc := xml.NewEncoder(w)
+	enc.Indent("", "  ")
+	enc.Encode(rss)
+}
+
+// writeProbeResponse returns a single-item feed for empty search probes.
+// The item is a labeled placeholder — downstream *arr apps should recognize
+// the "librarr-placeholder-" guid and skip it. Humans hitting the URL see a
+// valid feed with a clear explanation.
+func (h *Handler) writeProbeResponse(w http.ResponseWriter, baseURL string) {
+	// Prowlarr's Torznab validator rejects items missing any of:
+	// - pubDate (RFC-1123)
+	// - size > 0
+	// - enclosure with length and type
+	// - torznab:attr for category + seeders
+	// All real indexer feeds include these. Without them Prowlarr says
+	// "Indexer feed is not supported" or "no results returned" even with
+	// a syntactically-valid item present. Shape the placeholder to match
+	// a real result — the guid prefix stops downstream apps from grabbing it.
+	probeURL := baseURL + "/torznab/api?t=caps"
+	items := []models.TorznabItem{{
+		Title:    "Librarr Torznab endpoint — pass ?q=<title> to search",
+		GUID:     fmt.Sprintf("librarr-placeholder-%s", baseURL),
+		Size:     1024,
+		Link:     probeURL,
+		Category: "7000",
+		PubDate:  time.Now().UTC().Format(time.RFC1123Z),
+		Enclosure: &models.TorznabEnclosure{
+			URL:    probeURL,
+			Length: 1024,
+			Type:   "application/x-bittorrent",
+		},
+		Attrs: []models.TorznabAttr{
+			{Name: "category", Value: "7000"},
+			{Name: "seeders", Value: "0"},
+			{Name: "peers", Value: "0"},
+		},
+	}}
+	rss := models.TorznabRSS{
+		Version: "2.0",
+		Xmlns:   "http://torznab.com/schemas/2015/feed",
+		Channel: models.TorznabChannel{
+			Title:       "Librarr",
+			Description: "Book search endpoint",
+			Items:       items,
+		},
+	}
 	w.Header().Set("Content-Type", "application/xml; charset=UTF-8")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(xml.Header))

@@ -178,8 +178,11 @@ func isExempt(path string) bool {
 	if exemptPaths[path] {
 		return true
 	}
-	// Torznab has its own apikey auth.
-	if strings.HasPrefix(path, "/torznab/") {
+	// Torznab has its own apikey auth (checked inside the handler itself).
+	// Both the canonical path and the Prowlarr-compat /api alias are exempt;
+	// the alias is mounted as exact path /api only, so this does NOT match
+	// /api/search, /api/library, etc.
+	if path == "/api" || strings.HasPrefix(path, "/torznab/") {
 		return true
 	}
 	// Static assets.

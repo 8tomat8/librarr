@@ -386,6 +386,12 @@ func (s *Server) registerRoutes() {
 	// Torznab API.
 	torznabHandler := torznab.NewHandler(s.cfg, s.searchMgr)
 	s.mux.Handle("GET /torznab/api", torznabHandler)
+	// Prowlarr's indexer-discovery probe hits bare /api?t=caps rather than
+	// /torznab/api. Route the exact path /api (not /api/*) to the same
+	// handler so Prowlarr can detect and save Librarr as an indexer.
+	// /api/... (JSON endpoints) is unaffected — Go 1.22 ServeMux's "GET /api"
+	// pattern matches only the exact path, not prefixes.
+	s.mux.HandleFunc("GET /api", torznabHandler.ServeHTTPAlias)
 }
 
 func (s *Server) handleRetryJob(w http.ResponseWriter, r *http.Request) {
