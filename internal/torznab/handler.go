@@ -147,15 +147,33 @@ func (h *Handler) handleSearch(w http.ResponseWriter, r *http.Request, tab strin
 // the "librarr-placeholder-" guid and skip it. Humans hitting the URL see a
 // valid feed with a clear explanation.
 func (h *Handler) writeProbeResponse(w http.ResponseWriter, baseURL string) {
-	// Prowlarr validates that every item has a valid RFC-1123 pubDate —
-	// a missing pubDate fails with "Indexer feed is not supported".
+	// Prowlarr's Torznab validator rejects items missing any of:
+	// - pubDate (RFC-1123)
+	// - size > 0
+	// - enclosure with length and type
+	// - torznab:attr for category + seeders
+	// All real indexer feeds include these. Without them Prowlarr says
+	// "Indexer feed is not supported" or "no results returned" even with
+	// a syntactically-valid item present. Shape the placeholder to match
+	// a real result — the guid prefix stops downstream apps from grabbing it.
+	probeURL := baseURL + "/torznab/api?t=caps"
 	items := []models.TorznabItem{{
 		Title:    "Librarr Torznab endpoint — pass ?q=<title> to search",
 		GUID:     fmt.Sprintf("librarr-placeholder-%s", baseURL),
-		Size:     0,
-		Link:     baseURL + "/torznab/api?t=caps",
+		Size:     1024,
+		Link:     probeURL,
 		Category: "7000",
 		PubDate:  time.Now().UTC().Format(time.RFC1123Z),
+		Enclosure: &models.TorznabEnclosure{
+			URL:    probeURL,
+			Length: 1024,
+			Type:   "application/x-bittorrent",
+		},
+		Attrs: []models.TorznabAttr{
+			{Name: "category", Value: "7000"},
+			{Name: "seeders", Value: "0"},
+			{Name: "peers", Value: "0"},
+		},
 	}}
 	rss := models.TorznabRSS{
 		Version: "2.0",
