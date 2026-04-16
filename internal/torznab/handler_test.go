@@ -152,6 +152,18 @@ func TestHandler_MissingQueryReturnsProbeResponse(t *testing.T) {
 		t.Errorf("probe item must include pubDate (Prowlarr requirement): %s",
 			body[:min(400, len(body))])
 	}
+	// These fields were individually required by Prowlarr's Torznab validator
+	// before it would accept the indexer save. Regression guards.
+	for _, need := range []string{"<enclosure", "<torznab:attr", `name="seeders"`, `name="category"`} {
+		if !strings.Contains(body, need) {
+			t.Errorf("probe item missing required field %q (Prowlarr would reject): %s",
+				need, body[:min(600, len(body))])
+		}
+	}
+	// Size must be > 0 — Prowlarr rejects items with size=0.
+	if strings.Contains(body, "<size>0</size>") {
+		t.Errorf("probe item size must be > 0 (Prowlarr rejects zero-size items)")
+	}
 }
 
 // TestHandler_BareSearchTypesAllProbe — every search-family t= value
