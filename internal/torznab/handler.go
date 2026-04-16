@@ -53,6 +53,15 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// ServeHTTPAlias handles the bare /api path that Prowlarr probes during
+// indexer discovery (it expects a Torznab endpoint at /api, not
+// /torznab/api). Same semantics as ServeHTTP — this just accepts the alias
+// path. Mounted exactly on /api (not /api/...) so it doesn't shadow the
+// main JSON API tree.
+func (h *Handler) ServeHTTPAlias(w http.ResponseWriter, r *http.Request) {
+	h.ServeHTTP(w, r)
+}
+
 func (h *Handler) handleCaps(w http.ResponseWriter, _ *http.Request) {
 	caps := BuildCaps()
 	w.Header().Set("Content-Type", "application/xml; charset=UTF-8")
@@ -78,7 +87,12 @@ func (h *Handler) handleSearch(w http.ResponseWriter, r *http.Request, tab strin
 	}
 
 	if query == "" {
-		h.writeError(w, "100", "Missing parameter (q)", http.StatusBadRequest)
+		// Prowlarr polls `t=search` with no query as an RSS health check —
+		// it expects an empty feed, not an error. Returning 400 breaks
+		// indexer health monitoring. Empty results is the Torznab norm for
+		// "no matches" and is what every real indexer does in this case.
+		slog.Info("torznab empty search (health probe)", "tab", tab, "remote", r.RemoteAddr)
+		h.writeEmptyResults(w)
 		return
 	}
 
