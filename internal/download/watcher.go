@@ -138,14 +138,20 @@ func (w *Watcher) importTorrent(t TorrentInfo, mediaType string) {
 }
 
 // resolveLocalPath maps qBittorrent container paths to local paths.
+// Each media type uses its dedicated INCOMING directory (where qBit
+// downloads to), NOT the final organized library directory. Previously
+// audiobooks used AudiobookDir (the library target) which caused files
+// to be looked up in the wrong place and could lead to ebooks being
+// misrouted if paths overlapped.
 func (w *Watcher) resolveLocalPath(t TorrentInfo, mediaType string) string {
-	// Use content_path if available via the name field; otherwise use category save paths.
-	// Since we only get basic TorrentInfo, construct from category config.
 	switch mediaType {
 	case "ebook":
 		return filepath.Join(w.cfg.IncomingDir, t.Name)
 	case "audiobook":
-		return filepath.Join(w.cfg.AudiobookDir, t.Name)
+		if w.cfg.QBAudiobookSavePath != "" {
+			return filepath.Join(w.cfg.QBAudiobookSavePath, t.Name)
+		}
+		return filepath.Join(w.cfg.IncomingDir, t.Name)
 	case "manga":
 		return filepath.Join(w.cfg.MangaIncomingDir, t.Name)
 	default:
