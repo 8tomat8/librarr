@@ -1420,12 +1420,14 @@ function switchLibraryTab(tab) {
 // SEARCH
 // ============================================================
 let searchTimeout = null;
+let searchAbort = null;   // AbortController for in-flight request
+let searchGeneration = 0; // monotonic counter — stale responses are discarded
 
 document.getElementById('search-input').addEventListener('input', (e) => {
   clearTimeout(searchTimeout);
   const q = e.target.value.trim();
   if (q.length < 2) return;
-  searchTimeout = setTimeout(() => doSearch(q), 400);
+  searchTimeout = setTimeout(() => doSearch(q), 300);
 });
 
 document.getElementById('search-input').addEventListener('keydown', (e) => {
@@ -1440,15 +1442,28 @@ async function doSearch(query) {
   const endpoints = { ebooks: '/api/search', audiobooks: '/api/search/audiobooks', manga: '/api/search/manga' };
   const endpoint = endpoints[state.searchTab] || '/api/search';
 
+  // Abort any in-flight search — prevents stale results from overwriting
+  // the new search when the old request finishes after the new one starts.
+  if (searchAbort) searchAbort.abort();
+  searchAbort = new AbortController();
+  const gen = ++searchGeneration;
+
   // Show skeleton
   showSearchSkeleton();
+  state.searchResults = [];
   document.getElementById('search-results').innerHTML = '';
   document.getElementById('search-empty').classList.add('hidden');
   document.getElementById('search-no-results').classList.add('hidden');
   document.getElementById('search-spinner').classList.remove('hidden');
 
   try {
-    const data = await apiJson(`${endpoint}?q=${encodeURIComponent(query)}`);
+    const data = await apiJson(`${endpoint}?q=${encodeURIComponent(query)}`, {
+      signal: searchAbort.signal,
+    });
+
+    // Discard if a newer search was started while we were waiting.
+    if (gen !== searchGeneration) return;
+
     state.searchResults = data.results || [];
     document.getElementById('search-spinner').classList.add('hidden');
     hideSearchSkeleton();
@@ -1462,6 +1477,8 @@ async function doSearch(query) {
       renderSearchResults();
     }
   } catch (err) {
+    if (err.name === 'AbortError') return; // expected — new search superseded this one
+    if (gen !== searchGeneration) return;
     document.getElementById('search-spinner').classList.add('hidden');
     hideSearchSkeleton();
     if (err.message !== 'Unauthorized') {
