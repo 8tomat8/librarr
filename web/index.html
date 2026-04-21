@@ -522,6 +522,21 @@ tailwind.config = {
         </div>
       </div>
 
+      <!-- Download Behavior -->
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 mb-6">
+        <h3 class="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-4">Download Behavior</h3>
+        <div class="flex items-center justify-between py-2">
+          <div>
+            <p class="text-sm text-slate-300">Remove torrents after import</p>
+            <p class="text-xs text-slate-500 mt-1">When enabled, torrents are removed from qBittorrent after files are imported. Disable to keep seeding.</p>
+          </div>
+          <label class="relative inline-flex items-center cursor-pointer ml-4 shrink-0">
+            <input type="checkbox" id="remove-torrent-toggle" class="sr-only peer" checked onchange="toggleRemoveTorrent()">
+            <div class="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+          </label>
+        </div>
+      </div>
+
       <!-- Sources -->
       <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 mb-6">
         <h3 class="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-4" data-i18n="s_search_sources">Search Sources</h3>
@@ -2041,9 +2056,24 @@ async function loadSettings() {
   loadConfig();
   loadSources();
   loadTOTPStatus();
+  loadSettingToggles();
   if (state.currentRole === 'admin') {
     loadUsers();
   }
+}
+
+async function loadSettingToggles() {
+  try {
+    const data = await apiJson('/api/settings');
+    const removeTorrent = document.getElementById('remove-torrent-toggle');
+    if (removeTorrent && data.remove_torrent_after_import !== undefined) {
+      removeTorrent.checked = data.remove_torrent_after_import;
+    }
+    const langFilter = document.getElementById('foreign-lang-filter-toggle');
+    if (langFilter && data.foreign_lang_filter !== undefined) {
+      langFilter.checked = data.foreign_lang_filter;
+    }
+  } catch (err) {}
 }
 
 async function loadConfig() {
@@ -2133,6 +2163,30 @@ async function toggleForeignLangFilter() {
     toggle.checked = !enabled;
     if (err.message !== 'Unauthorized') {
       showToast(t('filter_save_failed'), 'error');
+    }
+  }
+}
+
+async function toggleRemoveTorrent() {
+  const toggle = document.getElementById('remove-torrent-toggle');
+  if (!toggle) return;
+  const enabled = toggle.checked;
+  try {
+    const res = await apiJson('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ remove_torrent_after_import: enabled })
+    });
+    if (res.success) {
+      showToast(enabled ? 'Torrents will be removed after import' : 'Torrents will keep seeding after import', 'success');
+    } else {
+      toggle.checked = !enabled;
+      showToast('Failed to update setting', 'error');
+    }
+  } catch (err) {
+    toggle.checked = !enabled;
+    if (err.message !== 'Unauthorized') {
+      showToast('Failed to save setting', 'error');
     }
   }
 }

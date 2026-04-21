@@ -123,11 +123,16 @@ func (w *Watcher) importTorrent(t TorrentInfo, mediaType string) {
 		return
 	}
 
-	// Remove torrent from qBit (keep files).
-	if err := w.qb.DeleteTorrent(t.Hash, false); err != nil {
-		slog.Warn("failed to remove torrent after import", "hash", t.Hash, "error", err)
+	// Optionally remove torrent from qBit after import. Default is to leave
+	// it seeding — users who want auto-removal set REMOVE_TORRENT_AFTER_IMPORT=true.
+	if w.cfg.RemoveTorrentAfterImport {
+		if err := w.qb.DeleteTorrent(t.Hash, false); err != nil {
+			slog.Warn("failed to remove torrent after import", "hash", t.Hash, "error", err)
+		} else {
+			slog.Info("removed completed torrent", "name", t.Name)
+		}
 	} else {
-		slog.Info("removed completed torrent", "name", t.Name)
+		slog.Info("torrent left seeding after import", "name", t.Name, "hash", t.Hash)
 	}
 
 	// Mark as imported.

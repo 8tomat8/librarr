@@ -286,3 +286,20 @@ func TestHas_Methods(t *testing.T) {
 		}
 	})
 }
+
+func TestRemoveTorrentAfterImportDefault(t *testing.T) {
+	os.Unsetenv("REMOVE_TORRENT_AFTER_IMPORT")
+	cfg := Load()
+	if !cfg.RemoveTorrentAfterImport {
+		t.Error("RemoveTorrentAfterImport should default to true (remove after import)")
+	}
+}
+
+func TestRemoveTorrentAfterImportDisabled(t *testing.T) {
+	os.Setenv("REMOVE_TORRENT_AFTER_IMPORT", "false")
+	defer os.Unsetenv("REMOVE_TORRENT_AFTER_IMPORT")
+	cfg := Load()
+	if cfg.RemoveTorrentAfterImport {
+		t.Error("RemoveTorrentAfterImport should be false when explicitly disabled")
+	}
+}
