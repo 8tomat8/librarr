@@ -81,14 +81,25 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Return objects with "configured" + "url" so the frontend can display
+	// both the status and the URL. Previously these were bare booleans, and
+	// the frontend did data.prowlarr.url which was undefined on a bool →
+	// showed "Not configured" even when the service was configured.
+	configObj := func(configured bool, url string) map[string]interface{} {
+		if !configured {
+			return nil
+		}
+		return map[string]interface{}{"configured": true, "url": url}
+	}
+
 	resp := map[string]interface{}{
-		"prowlarr":           s.cfg.HasProwlarr(),
-		"qbittorrent":        s.cfg.HasQBittorrent(),
+		"prowlarr":           configObj(s.cfg.HasProwlarr(), s.cfg.ProwlarrURL),
+		"qbittorrent":        configObj(s.cfg.HasQBittorrent(), s.cfg.QBUrl),
 		"audiobookshelf":     s.cfg.HasAudiobookshelf(),
 		"kavita":             s.cfg.HasKavita(),
 		"calibre":            s.cfg.HasCalibre(),
 		"komga":              s.cfg.HasKomga(),
-		"sabnzbd":            s.cfg.HasSABnzbd(),
+		"sabnzbd":            configObj(s.cfg.HasSABnzbd(), s.cfg.SABnzbdURL),
 		"file_org_enabled":   s.cfg.FileOrgEnabled,
 		"torznab_enabled":    s.cfg.TorznabAPIKey != "",
 		"rate_limit_enabled": s.cfg.RateLimitEnabled,
