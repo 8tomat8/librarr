@@ -92,6 +92,9 @@ type Config struct {
 	QBPriority  int
 	SABPriority int
 
+	// Post-import torrent handling
+	RemoveTorrentAfterImport bool
+
 	// Flibusta
 	FlibustaURL     string
 	FlibustaEnabled bool
@@ -241,6 +244,8 @@ func Load() *Config {
 
 		QBPriority:  getEnvInt("QB_PRIORITY", 1),
 		SABPriority: getEnvInt("SAB_PRIORITY", 2),
+
+		RemoveTorrentAfterImport: getEnvBool("REMOVE_TORRENT_AFTER_IMPORT", true),
 
 		RateLimitEnabled: getEnvBool("RATE_LIMIT_ENABLED", true),
 		MetricsEnabled:   getEnvBool("METRICS_ENABLED", true),
