@@ -879,6 +879,14 @@ func (d *DB) DeleteItem(id int64) error {
 	return nil
 }
 
+// DeleteItemBySourceID removes a library item by its source_id field.
+func (d *DB) DeleteItemBySourceID(sourceID string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	_, err := d.db.Exec("DELETE FROM library_items WHERE source_id = ?", sourceID)
+	return err
+}
+
 // --- Wishlist ---
 
 // AddWishlistItem adds an item to the wishlist.

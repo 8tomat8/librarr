@@ -84,3 +84,39 @@ func TestVerifyEPUBTitle_WordOverlapLogic(t *testing.T) {
 		}
 	})
 }
+
+func TestNormalizeAuthor(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		// "Last, First" → "First Last"
+		{"Wight, Will", "Will Wight"},
+		{"Sanderson, Brandon", "Brandon Sanderson"},
+		{"Herbert, Frank", "Frank Herbert"},
+		// "Last, First Middle" → "First Middle Last"
+		{"Tolkien, John Ronald Reuel", "John Ronald Reuel Tolkien"},
+		// Already correct
+		{"Will Wight", "Will Wight"},
+		{"Brandon Sanderson", "Brandon Sanderson"},
+		// Multiple authors — don't touch
+		{"Author One, Author Two, Author Three", "Author One, Author Two, Author Three"},
+		{"Author One & Author Two", "Author One & Author Two"},
+		// Empty
+		{"", ""},
+		// Punctuation artifacts
+		{".Will Wight.", "Will Wight"},
+		{"Will Wight;", "Will Wight"},
+		// Whitespace
+		{"  Wight ,  Will  ", "Will Wight"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := normalizeAuthor(tt.input)
+			if got != tt.expected {
+				t.Errorf("normalizeAuthor(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
