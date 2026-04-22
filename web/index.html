@@ -1866,8 +1866,10 @@ function renderLibraryEbook(item, index) {
   const seriesBadge = item.series ? `<p class="text-xs text-indigo-400 line-clamp-1 mb-1">${escapeHtml(item.series)}</p>` : '';
 
   return `
-    <div class="book-card bg-slate-900 rounded-xl overflow-hidden border border-slate-800 hover:border-slate-600">
+    <div class="book-card bg-slate-900 rounded-xl overflow-hidden border border-slate-800 hover:border-slate-600 relative group">
       ${coverHtml}
+      <button onclick="deleteLibraryItem('${escapeHtml(item.id || '')}', 'book', '${escapeJs(item.title || '')}')"
+        class="absolute top-2 right-2 w-7 h-7 bg-red-600/80 hover:bg-red-500 text-white rounded-full text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center" title="Remove from library">&#x2715;</button>
       <div class="p-3">
         <h3 class="text-sm font-semibold text-white line-clamp-2 mb-1">${escapeHtml(item.title || 'Unknown')}</h3>
         <p class="text-xs text-slate-400 line-clamp-1 mb-1">${escapeHtml(item.author || '')}</p>
@@ -1889,8 +1891,10 @@ function renderLibraryAudiobook(item, index) {
   const duration = item.duration_hours ? `${item.duration_hours.toFixed(1)}h` : '';
 
   return `
-    <div class="book-card bg-slate-900 rounded-xl overflow-hidden border border-slate-800 hover:border-slate-600">
+    <div class="book-card bg-slate-900 rounded-xl overflow-hidden border border-slate-800 hover:border-slate-600 relative group">
       ${coverHtml}
+      <button onclick="deleteLibraryItem('${escapeHtml(item.id || '')}', 'audiobook', '${escapeJs(item.title || '')}')"
+        class="absolute top-2 right-2 w-7 h-7 bg-red-600/80 hover:bg-red-500 text-white rounded-full text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center" title="Remove from library">&#x2715;</button>
       <div class="p-3">
         <h3 class="text-sm font-semibold text-white line-clamp-2 mb-1">${escapeHtml(item.title || 'Unknown')}</h3>
         <p class="text-xs text-slate-400 line-clamp-1 mb-1">${escapeHtml(item.author || '')}</p>
@@ -1923,6 +1927,20 @@ function renderLibraryManga(item, index) {
       </div>
     </div>
   `;
+}
+
+async function deleteLibraryItem(id, type, title) {
+  if (!id) return;
+  if (!confirm(`Remove "${title}" from library?`)) return;
+  try {
+    await apiJson(`/api/library/${type}/${id}`, { method: 'DELETE' });
+    showToast(`Removed "${title}"`, 'success');
+    loadLibrary();
+  } catch (err) {
+    if (err.message !== 'Unauthorized') {
+      showToast(`Failed to remove: ${err.message}`, 'error');
+    }
+  }
 }
 
 function renderPagination(container, currentPage, totalPages) {

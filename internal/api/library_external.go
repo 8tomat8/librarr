@@ -397,31 +397,50 @@ func (s *Server) kavitaLogin() (string, error) {
 
 func (s *Server) handleDeleteBook(w http.ResponseWriter, r *http.Request) {
 	idStr := r.PathValue("id")
-	id, err := strconv.ParseInt(idStr, 10, 64)
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
-			"success": false,
-			"error":   "Invalid ID",
-		})
+
+	// Try as integer (internal DB item) first.
+	if id, err := strconv.ParseInt(idStr, 10, 64); err == nil {
+		if err := s.db.DeleteItem(id); err != nil {
+			writeJSON(w, http.StatusNotFound, map[string]interface{}{
+				"success": false,
+				"error":   err.Error(),
+			})
+			return
+		}
+		username, _ := r.Context().Value(ctxUsername).(string)
+		s.db.LogActivity(username, "library_remove", idStr, fmt.Sprintf("Removed library item %s", idStr))
+		writeJSON(w, http.StatusOK, map[string]interface{}{"success": true})
 		return
 	}
 
-	if err := s.db.DeleteItem(id); err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]interface{}{
-			"success": false,
-			"error":   err.Error(),
-		})
-		return
+	// UUID string — ABS library item. Delete via ABS API.
+	if s.cfg.HasAudiobookshelf() && s.cfg.ABSToken != "" {
+		absURL := fmt.Sprintf("%s/api/items/%s", s.cfg.ABSURL, idStr)
+		req, err := http.NewRequest("DELETE", absURL, nil)
+		if err == nil {
+			req.Header.Set("Authorization", "Bearer "+s.cfg.ABSToken)
+			resp, err := http.DefaultClient.Do(req)
+			if err == nil {
+				resp.Body.Close()
+				if resp.StatusCode < 300 {
+					slog.Info("deleted ABS library item", "id", idStr)
+				} else {
+					slog.Warn("ABS delete non-success", "id", idStr, "status", resp.StatusCode)
+				}
+			}
+		}
 	}
+
+	// Also try internal DB by source_id.
+	_ = s.db.DeleteItemBySourceID(idStr)
 
 	username, _ := r.Context().Value(ctxUsername).(string)
 	s.db.LogActivity(username, "library_remove", idStr, fmt.Sprintf("Removed library item %s", idStr))
-
 	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true})
 }
 
 func (s *Server) handleDeleteAudiobook(w http.ResponseWriter, r *http.Request) {
-	// Same as delete book - removes from local tracking DB.
+	// Same as delete book — handles both integer and UUID IDs.
 	s.handleDeleteBook(w, r)
 }
 

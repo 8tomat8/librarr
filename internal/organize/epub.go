@@ -77,10 +77,36 @@ func ExtractEPUBMeta(path string) (*EPUBMeta, error) {
 		return nil, fmt.Errorf("parse opf: %w", err)
 	}
 
+	author := normalizeAuthor(strings.TrimSpace(pkg.Metadata.Creator))
+
 	return &EPUBMeta{
 		Title:  strings.TrimSpace(pkg.Metadata.Title),
-		Author: strings.TrimSpace(pkg.Metadata.Creator),
+		Author: author,
 	}, nil
+}
+
+// normalizeAuthor cleans up common author name formats from EPUB metadata.
+// "Last, First" → "First Last" (dc:creator often uses inverted form).
+// "First Last" → unchanged.
+// Strips stray punctuation artifacts from bad metadata.
+func normalizeAuthor(author string) string {
+	if author == "" {
+		return ""
+	}
+	// Handle "Last, First" or "Last, First Middle" — single comma only.
+	// Don't touch "Author1 & Author2" or "A, B, C" (multiple authors).
+	if strings.Count(author, ",") == 1 && !strings.Contains(author, "&") && !strings.Contains(author, " and ") {
+		parts := strings.SplitN(author, ",", 2)
+		last := strings.TrimSpace(parts[0])
+		first := strings.TrimSpace(parts[1])
+		if first != "" && last != "" {
+			author = first + " " + last
+		}
+	}
+	// Strip leading/trailing punctuation artifacts (periods, semicolons)
+	// that bad metadata sometimes includes.
+	author = strings.Trim(author, ".,;:!?\"'")
+	return strings.TrimSpace(author)
 }
 
 // VerifyEPUBTitle checks that the EPUB's dc:title has >= threshold word overlap
