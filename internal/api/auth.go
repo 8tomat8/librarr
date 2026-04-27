@@ -500,12 +500,15 @@ func handleLoginTOTP(database *db.DB, sessions *SessionStore) http.HandlerFunc {
 }
 
 // handleRegister handles POST /api/register — create a new user.
-// First user becomes admin. After that, only admins can register new users.
+// First user becomes admin. After that, registration requires either:
+//   - An admin session (admin creating users directly), OR
+//   - A valid invite code (self-registration with a code the admin shared).
 func handleRegister(database *db.DB, sessions *SessionStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
-			Username string `json:"username"`
-			Password string `json:"password"`
+			Username   string `json:"username"`
+			Password   string `json:"password"`
+			InviteCode string `json:"invite_code"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]interface{}{
@@ -533,21 +536,34 @@ func handleRegister(database *db.DB, sessions *SessionStore) http.HandlerFunc {
 		userCount, _ := database.CountUsers()
 		isFirstUser := userCount == 0
 
-		// After first user, only admins can register.
-		if !isFirstUser {
-			role, _ := r.Context().Value(ctxUserRole).(string)
-			if role != "admin" {
-				writeJSON(w, http.StatusForbidden, map[string]interface{}{
-					"success": false,
-					"error":   "Only admins can create new users",
-				})
-				return
-			}
-		}
-
 		role := "user"
 		if isFirstUser {
 			role = "admin"
+		}
+
+		// After first user, require either admin session or valid invite code.
+		if !isFirstUser {
+			ctxRole, _ := r.Context().Value(ctxUserRole).(string)
+			isAdmin := ctxRole == "admin"
+
+			if req.InviteCode != "" {
+				// Validate invite code.
+				inviteRole, err := database.ValidateInviteCode(req.InviteCode)
+				if err != nil {
+					writeJSON(w, http.StatusForbidden, map[string]interface{}{
+						"success": false,
+						"error":   err.Error(),
+					})
+					return
+				}
+				role = inviteRole
+			} else if !isAdmin {
+				writeJSON(w, http.StatusForbidden, map[string]interface{}{
+					"success": false,
+					"error":   "Registration requires an invite code",
+				})
+				return
+			}
 		}
 
 		hash, err := hashPassword(req.Password)
@@ -573,6 +589,11 @@ func handleRegister(database *db.DB, sessions *SessionStore) http.HandlerFunc {
 				"error":   "Failed to create user",
 			})
 			return
+		}
+
+		// Mark invite code as used.
+		if req.InviteCode != "" {
+			_ = database.UseInviteCode(req.InviteCode)
 		}
 
 		slog.Info("user registered", "id", id, "username", req.Username, "role", role)

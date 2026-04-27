@@ -192,6 +192,10 @@ tailwind.config = {
         <label class="block text-sm font-medium text-slate-300 mb-1" data-i18n="label_password">Password</label>
         <input type="password" id="register-password" class="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" placeholder="Min 6 characters" data-i18n-placeholder="ph_min_6_chars" autocomplete="new-password">
       </div>
+      <div id="invite-code-field">
+        <label class="block text-sm font-medium text-slate-300 mb-1">Invite Code</label>
+        <input type="text" id="register-invite-code" class="w-full bg-slate-800 border border-slate-600 rounded-lg px-4 py-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500" placeholder="Enter invite code from admin" autocomplete="off">
+      </div>
       <div id="register-error" class="text-red-400 text-sm hidden"></div>
       <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-2.5 rounded-lg transition-colors" data-i18n="create_account">
         Create Account
@@ -1152,13 +1156,16 @@ function showLoginModal() {
       hideLoginModal();
       return;
     }
-    // Show register link if no users exist yet.
+    // Always show register link — invite codes make self-registration secure.
+    // First user creates admin (no invite needed). After that, invite code required.
     const regLink = document.getElementById('login-register-link');
+    regLink.classList.remove('hidden');
     if (!data.has_users) {
-      regLink.classList.remove('hidden');
       document.getElementById('login-subtitle').textContent = t('create_admin_account');
+      // Hide invite code field for first user.
+      const invField = document.getElementById('invite-code-field');
+      if (invField) invField.classList.add('hidden');
     } else {
-      regLink.classList.add('hidden');
       document.getElementById('login-subtitle').textContent = t('login_subtitle');
     }
   }).catch(() => {});
@@ -1288,6 +1295,7 @@ document.getElementById('register-form').addEventListener('submit', async (e) =>
 
   const username = document.getElementById('register-username').value.trim();
   const password = document.getElementById('register-password').value;
+  const inviteCode = (document.getElementById('register-invite-code')?.value || '').trim();
 
   if (!username || !password) {
     errEl.textContent = t('err_credentials_required');
@@ -1296,11 +1304,13 @@ document.getElementById('register-form').addEventListener('submit', async (e) =>
   }
 
   try {
+    const body = { username, password };
+    if (inviteCode) body.invite_code = inviteCode;
     const resp = await fetch('/api/register', {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify(body),
     });
 
     const data = await resp.json().catch(() => ({}));

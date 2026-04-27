@@ -195,6 +195,11 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("PATCH /api/users/{id}", requireAdmin(handleUpdateUser(s.db)))
 	s.mux.HandleFunc("DELETE /api/users/{id}", requireAdmin(handleDeleteUser(s.db)))
 
+	// Invite codes (admin only).
+	s.mux.HandleFunc("GET /api/invites", requireAdmin(s.handleListInvites))
+	s.mux.HandleFunc("POST /api/invites", requireAdmin(s.handleCreateInvite))
+	s.mux.HandleFunc("DELETE /api/invites/{id}", requireAdmin(s.handleDeleteInvite))
+
 	// TOTP 2FA.
 	s.mux.HandleFunc("POST /api/totp/setup", handleTOTPSetup(s.db))
 	s.mux.HandleFunc("POST /api/totp/verify", handleTOTPVerify(s.db))
