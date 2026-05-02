@@ -9,6 +9,16 @@
 
 Librarr searches 13 sources simultaneously, scores results by confidence, and auto-imports into your Calibre, Audiobookshelf, Kavita, or Komga library. Single ~17MB Go binary. No runtime dependencies.
 
+## Screenshots
+
+| Search | Library |
+|---|---|
+| ![Search across 13 sources with confidence scoring](docs/screenshots/search.png) | ![Unified library view across ebooks, audiobooks, and manga](docs/screenshots/library.png) |
+
+| Wishlist | Settings |
+|---|---|
+| ![Wishlist with auto-search scheduler](docs/screenshots/wishlist.png) | ![Settings with 2FA, user management, and connection tests](docs/screenshots/settings.png) |
+
 ## Why Librarr?
 
 - **Import your Goodreads or StoryGraph library** via CSV and bulk-download everything
