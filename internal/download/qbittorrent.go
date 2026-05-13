@@ -80,13 +80,29 @@ func (q *QBittorrentClient) login() error {
 		return fmt.Errorf("IP banned by qBittorrent")
 	}
 
-	if bodyStr != "Ok." {
+	// qBittorrent 4.x returns 200 OK with body "Ok." on success.
+	// qBittorrent 5.x returns 204 No Content with an empty body; the session
+	// cookie (QBT_SID_*) in response headers signals success.
+	cookies := resp.Cookies()
+	hasSession := false
+	for _, c := range cookies {
+		if strings.HasPrefix(c.Name, "QBT_SID") {
+			hasSession = true
+			break
+		}
+	}
+	success := resp.StatusCode >= 200 && resp.StatusCode < 300 && (bodyStr == "Ok." || hasSession)
+
+	if !success {
 		q.nextLogin = now.Add(30 * time.Second)
 		q.authenticated = false
+		if bodyStr == "" {
+			return fmt.Errorf("login failed: HTTP %d", resp.StatusCode)
+		}
 		return fmt.Errorf("login failed: %s", bodyStr)
 	}
 
-	q.cookies = resp.Cookies()
+	q.cookies = cookies
 	q.authenticated = true
 	q.backoffSec = 3
 	q.nextLogin = time.Time{}
