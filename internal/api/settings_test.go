@@ -138,6 +138,37 @@ func TestSaveSettings_MaskedSentinelPreservesRealValue(t *testing.T) {
 	}
 }
 
+// TestSaveSettings_WriteFailureDoesNotLeakPath — when the on-disk write fails
+// (e.g. permission denied) the HTTP response must stay generic. Previously the
+// raw err.Error() was returned, which included the absolute filesystem path
+// of settings.json — useful to an attacker probing the deployment layout.
+func TestSaveSettings_WriteFailureDoesNotLeakPath(t *testing.T) {
+	s, path := settingsTestServer(t)
+
+	// Make the file unwritable. WriteFile on a 0444 file returns
+	// "permission denied" with the full path in the message.
+	if err := os.WriteFile(path, []byte("{}"), 0444); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	defer os.Chmod(path, 0600)
+
+	body, _ := json.Marshal(map[string]interface{}{"prowlarr_url": "http://x:9696"})
+	req := httptest.NewRequest(http.MethodPost, "/api/settings", bytes.NewReader(body))
+	req = req.WithContext(context.WithValue(req.Context(), ctxUsername, "admin"))
+	rr := httptest.NewRecorder()
+	s.handleSaveSettings(rr, req)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 on write failure, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if bytes.Contains(rr.Body.Bytes(), []byte(path)) {
+		t.Errorf("response leaks settings file path: %s", rr.Body.String())
+	}
+	if bytes.Contains(rr.Body.Bytes(), []byte("permission denied")) {
+		t.Errorf("response leaks underlying OS error: %s", rr.Body.String())
+	}
+}
+
 // TestGetSettings_MasksSensitiveValues — non-empty sensitive values must come
 // back as the sentinel, never as plaintext. Empty values stay empty so the UI
 // can distinguish "unset" from "set but hidden".

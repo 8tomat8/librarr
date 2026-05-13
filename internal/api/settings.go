@@ -126,18 +126,22 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 		existing[k] = v
 	}
 
-	// Write to file.
+	// Write to file. Server-side errors get logged with full context; the
+	// HTTP response stays generic so we don't leak the on-disk file path or
+	// underlying filesystem error to the browser.
 	jsonBytes, err := json.MarshalIndent(existing, "", "  ")
 	if err != nil {
+		slog.Error("settings marshal failed", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
-			"success": false, "error": err.Error(),
+			"success": false, "error": "Failed to save settings",
 		})
 		return
 	}
 
 	if err := os.WriteFile(s.cfg.SettingsFile, jsonBytes, 0600); err != nil {
+		slog.Error("settings write failed", "path", s.cfg.SettingsFile, "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
-			"success": false, "error": err.Error(),
+			"success": false, "error": "Failed to save settings",
 		})
 		return
 	}
