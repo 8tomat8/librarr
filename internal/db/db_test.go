@@ -41,14 +41,14 @@ func TestLibraryItems_CRUD(t *testing.T) {
 
 	t.Run("add and retrieve item", func(t *testing.T) {
 		item := &models.LibraryItem{
-			Title:     "The Great Gatsby",
-			Author:    "F. Scott Fitzgerald",
-			FilePath:  "/books/gatsby.epub",
-			FileSize:  500000,
+			Title:      "The Great Gatsby",
+			Author:     "F. Scott Fitzgerald",
+			FilePath:   "/books/gatsby.epub",
+			FileSize:   500000,
 			FileFormat: "epub",
-			MediaType: "ebook",
-			Source:    "annas",
-			SourceID:  "md5-abc123",
+			MediaType:  "ebook",
+			Source:     "annas",
+			SourceID:   "md5-abc123",
 		}
 
 		id, err := d.AddItem(item)
@@ -159,16 +159,16 @@ func TestDownloadJobs_CRUD(t *testing.T) {
 	d := newTestDB(t)
 
 	job := &models.DownloadJob{
-		ID:        "test-job-1",
-		Title:     "Test Book",
-		Source:    "annas",
-		Status:    "queued",
-		URL:       "https://example.com",
-		MD5:       "abc123",
-		MediaType: "ebook",
+		ID:         "test-job-1",
+		Title:      "Test Book",
+		Source:     "annas",
+		Status:     "queued",
+		URL:        "https://example.com",
+		MD5:        "abc123",
+		MediaType:  "ebook",
 		MaxRetries: 2,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
 	}
 
 	t.Run("save and get job", func(t *testing.T) {

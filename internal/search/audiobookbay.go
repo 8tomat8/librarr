@@ -9,9 +9,9 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/PuerkitoBio/goquery"
 	"github.com/JeremiahM37/librarr/internal/config"
 	"github.com/JeremiahM37/librarr/internal/models"
+	"github.com/PuerkitoBio/goquery"
 )
 
 // abbDomains lists AudioBookBay domains to try in order.
@@ -43,7 +43,7 @@ func NewAudioBookBay(cfg *config.Config, client *http.Client) *AudioBookBay {
 	return &AudioBookBay{cfg: cfg, client: client}
 }
 
-func (a *AudioBookBay) Name() string        { return "audiobookbay" }
+func (a *AudioBookBay) Name() string         { return "audiobookbay" }
 func (a *AudioBookBay) Label() string        { return "AudioBookBay" }
 func (a *AudioBookBay) Enabled() bool        { return true }
 func (a *AudioBookBay) SearchTab() string    { return "audiobook" }

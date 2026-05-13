@@ -4,24 +4,24 @@ import "time"
 
 // SearchResult represents a single search result from any source.
 type SearchResult struct {
-	Source      string `json:"source"`
-	Title       string `json:"title"`
-	Author      string `json:"author,omitempty"`
-	Size        int64  `json:"size,omitempty"`
-	SizeHuman   string `json:"size_human,omitempty"`
-	Seeders     int    `json:"seeders,omitempty"`
-	Leechers    int    `json:"leechers,omitempty"`
-	Indexer     string `json:"indexer,omitempty"`
-	DownloadURL string `json:"download_url,omitempty"`
-	MagnetURL   string `json:"magnet_url,omitempty"`
-	InfoHash    string `json:"info_hash,omitempty"`
-	GUID        string `json:"guid,omitempty"`
-	MD5         string `json:"md5,omitempty"`
-	URL         string `json:"url,omitempty"`
-	SourceID    string `json:"source_id,omitempty"`
-	CoverURL    string `json:"cover_url,omitempty"`
-	Format      string `json:"format,omitempty"`
-	MediaType        string `json:"media_type,omitempty"` // ebook, audiobook, manga
+	Source           string `json:"source"`
+	Title            string `json:"title"`
+	Author           string `json:"author,omitempty"`
+	Size             int64  `json:"size,omitempty"`
+	SizeHuman        string `json:"size_human,omitempty"`
+	Seeders          int    `json:"seeders,omitempty"`
+	Leechers         int    `json:"leechers,omitempty"`
+	Indexer          string `json:"indexer,omitempty"`
+	DownloadURL      string `json:"download_url,omitempty"`
+	MagnetURL        string `json:"magnet_url,omitempty"`
+	InfoHash         string `json:"info_hash,omitempty"`
+	GUID             string `json:"guid,omitempty"`
+	MD5              string `json:"md5,omitempty"`
+	URL              string `json:"url,omitempty"`
+	SourceID         string `json:"source_id,omitempty"`
+	CoverURL         string `json:"cover_url,omitempty"`
+	Format           string `json:"format,omitempty"`
+	MediaType        string `json:"media_type,omitempty"`        // ebook, audiobook, manga
 	DownloadProtocol string `json:"download_protocol,omitempty"` // "torrent" or "nzb"
 
 	// Scoring fields (populated by scorer).
@@ -63,20 +63,20 @@ type StatusTransition struct {
 
 // DownloadJob represents a background download job.
 type DownloadJob struct {
-	ID              string             `json:"job_id"`
-	Title           string             `json:"title"`
-	Source          string             `json:"source"`
-	Status          string             `json:"status"` // queued, searching, downloading, importing, completed, error, dead_letter, retry_wait
-	Detail          string             `json:"detail,omitempty"`
-	Error           string             `json:"error,omitempty"`
-	URL             string             `json:"url,omitempty"`
-	MD5             string             `json:"md5,omitempty"`
-	MediaType       string             `json:"media_type,omitempty"`
-	RetryCount      int                `json:"retry_count"`
-	MaxRetries      int                `json:"max_retries"`
-	CreatedAt       time.Time          `json:"created_at"`
-	UpdatedAt       time.Time          `json:"updated_at"`
-	StatusHistory   []StatusTransition `json:"status_history,omitempty"`
+	ID            string             `json:"job_id"`
+	Title         string             `json:"title"`
+	Source        string             `json:"source"`
+	Status        string             `json:"status"` // queued, searching, downloading, importing, completed, error, dead_letter, retry_wait
+	Detail        string             `json:"detail,omitempty"`
+	Error         string             `json:"error,omitempty"`
+	URL           string             `json:"url,omitempty"`
+	MD5           string             `json:"md5,omitempty"`
+	MediaType     string             `json:"media_type,omitempty"`
+	RetryCount    int                `json:"retry_count"`
+	MaxRetries    int                `json:"max_retries"`
+	CreatedAt     time.Time          `json:"created_at"`
+	UpdatedAt     time.Time          `json:"updated_at"`
+	StatusHistory []StatusTransition `json:"status_history,omitempty"`
 }
 
 // LibraryItem represents a tracked book in the library.
@@ -153,15 +153,15 @@ type User struct {
 
 // DownloadRequest is the payload for the POST /api/download endpoint.
 type DownloadRequest struct {
-	Source      string `json:"source"`
-	Title       string `json:"title"`
-	DownloadURL string `json:"download_url,omitempty"`
-	MagnetURL   string `json:"magnet_url,omitempty"`
-	InfoHash    string `json:"info_hash,omitempty"`
-	GUID        string `json:"guid,omitempty"`
-	MD5         string `json:"md5,omitempty"`
-	URL         string `json:"url,omitempty"`
-	AbbURL      string `json:"abb_url,omitempty"`
+	Source           string `json:"source"`
+	Title            string `json:"title"`
+	DownloadURL      string `json:"download_url,omitempty"`
+	MagnetURL        string `json:"magnet_url,omitempty"`
+	InfoHash         string `json:"info_hash,omitempty"`
+	GUID             string `json:"guid,omitempty"`
+	MD5              string `json:"md5,omitempty"`
+	URL              string `json:"url,omitempty"`
+	AbbURL           string `json:"abb_url,omitempty"`
 	Force            bool   `json:"force,omitempty"`
 	MediaType        string `json:"media_type,omitempty"`
 	DownloadProtocol string `json:"download_protocol,omitempty"`

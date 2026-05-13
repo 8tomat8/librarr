@@ -10,7 +10,7 @@ import (
 
 // Default format rankings.
 var (
-	defaultEbookRanking    = []string{"EPUB", "AZW3", "MOBI", "PDF", "CBZ", "CBR"}
+	defaultEbookRanking     = []string{"EPUB", "AZW3", "MOBI", "PDF", "CBZ", "CBR"}
 	defaultAudiobookRanking = []string{"M4B", "MP3"}
 )
 

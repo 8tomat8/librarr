@@ -41,9 +41,9 @@ func TestIsForeignTitle(t *testing.T) {
 		{"Buch auf Deutsch", true},
 		{"Livre en French", true},
 		{"Libro en Spanish", true},
-		{"Книга на русском", true},          // > 30% non-Latin
-		{"中文书籍", true},                      // all non-Latin
-		{"Book with some 日本語", false},       // 3 non-Latin / 15 letters = 20%, below 30% threshold
+		{"Книга на русском", true},    // > 30% non-Latin
+		{"中文书籍", true},                // all non-Latin
+		{"Book with some 日本語", false}, // 3 non-Latin / 15 letters = 20%, below 30% threshold
 		{"Normal Book Title 123", false},
 		{"", false},
 	}
@@ -64,12 +64,12 @@ func TestTitleRelevant(t *testing.T) {
 		query    string
 		expected bool
 	}{
-		{"The Great Gatsby", "great gatsby", true},                     // substring match
-		{"Gatsby: A Novel", "great gatsby", true},                      // 50% word overlap
-		{"Completely Unrelated", "great gatsby", false},                // no overlap
-		{"Any Title", "", true},                                         // empty query always relevant
-		{"The Great Gatsby", "the great gatsby by fitzgerald", true},   // query contains title
-		{"Great", "great gatsby adventure", true},                      // "great" is substring of query, so titleRelevant returns true
+		{"The Great Gatsby", "great gatsby", true},                   // substring match
+		{"Gatsby: A Novel", "great gatsby", true},                    // 50% word overlap
+		{"Completely Unrelated", "great gatsby", false},              // no overlap
+		{"Any Title", "", true},                                      // empty query always relevant
+		{"The Great Gatsby", "the great gatsby by fitzgerald", true}, // query contains title
+		{"Great", "great gatsby adventure", true},                    // "great" is substring of query, so titleRelevant returns true
 	}
 
 	for _, tt := range tests {
@@ -87,9 +87,9 @@ func TestExtractWords(t *testing.T) {
 		input    string
 		expected map[string]bool
 	}{
-		{"the great gatsby", map[string]bool{"great": true, "gatsby": true}},     // "the" is stopword
+		{"the great gatsby", map[string]bool{"great": true, "gatsby": true}},                   // "the" is stopword
 		{"a book of many things", map[string]bool{"book": true, "many": true, "things": true}}, // "a", "of" are stopwords
-		{"x", map[string]bool{}},                                                   // single char filtered
+		{"x", map[string]bool{}}, // single char filtered
 		{"", map[string]bool{}},
 		{"hello world 42", map[string]bool{"hello": true, "world": true, "42": true}},
 	}

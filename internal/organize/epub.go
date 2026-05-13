@@ -166,8 +166,8 @@ func extractSignificantWords(s string) map[string]bool {
 // XML structures for EPUB parsing.
 
 type containerXML struct {
-	XMLName   xml.Name    `xml:"container"`
-	Rootfiles []rootfile  `xml:"rootfiles>rootfile"`
+	XMLName   xml.Name   `xml:"container"`
+	Rootfiles []rootfile `xml:"rootfiles>rootfile"`
 }
 
 type rootfile struct {

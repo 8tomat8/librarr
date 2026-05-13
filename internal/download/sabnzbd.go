@@ -69,11 +69,11 @@ func (s *SABnzbdClient) AddNZB(nzbURL, title string) (string, error) {
 	}
 
 	params := url.Values{
-		"mode":   {"addurl"},
-		"name":   {nzbURL},
+		"mode":    {"addurl"},
+		"name":    {nzbURL},
 		"nzbname": {title},
-		"apikey": {s.cfg.SABnzbdAPIKey},
-		"output": {"json"},
+		"apikey":  {s.cfg.SABnzbdAPIKey},
+		"output":  {"json"},
 	}
 	if s.cfg.SABnzbdCategory != "" {
 		params.Set("cat", s.cfg.SABnzbdCategory)

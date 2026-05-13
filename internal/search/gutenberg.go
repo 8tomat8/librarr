@@ -24,7 +24,7 @@ func NewGutenberg(cfg *config.Config, client *http.Client) *Gutenberg {
 	return &Gutenberg{cfg: cfg, client: client}
 }
 
-func (g *Gutenberg) Name() string        { return "gutenberg" }
+func (g *Gutenberg) Name() string         { return "gutenberg" }
 func (g *Gutenberg) Label() string        { return "Project Gutenberg" }
 func (g *Gutenberg) Enabled() bool        { return true }
 func (g *Gutenberg) SearchTab() string    { return "main" }
@@ -100,11 +100,11 @@ type gutendexResponse struct {
 }
 
 type gutendexBook struct {
-	ID            int                `json:"id"`
-	Title         string             `json:"title"`
-	Authors       []gutendexAuthor   `json:"authors"`
-	Formats       map[string]string  `json:"formats"`
-	DownloadCount int                `json:"download_count"`
+	ID            int               `json:"id"`
+	Title         string            `json:"title"`
+	Authors       []gutendexAuthor  `json:"authors"`
+	Formats       map[string]string `json:"formats"`
+	DownloadCount int               `json:"download_count"`
 }
 
 type gutendexAuthor struct {

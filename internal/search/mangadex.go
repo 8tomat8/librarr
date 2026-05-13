@@ -22,7 +22,7 @@ func NewMangaDex(cfg *config.Config, client *http.Client) *MangaDex {
 	return &MangaDex{cfg: cfg, client: client}
 }
 
-func (m *MangaDex) Name() string        { return "mangadex" }
+func (m *MangaDex) Name() string         { return "mangadex" }
 func (m *MangaDex) Label() string        { return "MangaDex" }
 func (m *MangaDex) Enabled() bool        { return m.cfg.MangaDexEnabled }
 func (m *MangaDex) SearchTab() string    { return "manga" }

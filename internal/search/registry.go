@@ -11,7 +11,7 @@ import (
 type SourceFactory func(cfg *config.Config, client *http.Client) Searcher
 
 var (
-	registryMu  sync.Mutex
+	registryMu          sync.Mutex
 	registeredFactories []SourceFactory
 )
 

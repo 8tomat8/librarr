@@ -10,9 +10,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/PuerkitoBio/goquery"
 	"github.com/JeremiahM37/librarr/internal/config"
 	"github.com/JeremiahM37/librarr/internal/models"
+	"github.com/PuerkitoBio/goquery"
 )
 
 // WebNovel searches multiple web novel sites for light novels.
@@ -25,7 +25,7 @@ func NewWebNovel(cfg *config.Config, client *http.Client) *WebNovel {
 	return &WebNovel{cfg: cfg, client: client}
 }
 
-func (w *WebNovel) Name() string        { return "webnovel" }
+func (w *WebNovel) Name() string         { return "webnovel" }
 func (w *WebNovel) Label() string        { return "Web Novels" }
 func (w *WebNovel) Enabled() bool        { return w.cfg.WebNovelEnabled }
 func (w *WebNovel) SearchTab() string    { return "main" }

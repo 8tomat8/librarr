@@ -9,8 +9,8 @@ type Request struct {
 	Username         string    `json:"username"`
 	Title            string    `json:"title"`
 	Author           string    `json:"author,omitempty"`
-	BookType         string    `json:"book_type"`    // ebook, audiobook, manga
-	Status           string    `json:"status"`       // pending, approved, searching, downloading, processing, completed, failed, cancelled
+	BookType         string    `json:"book_type"` // ebook, audiobook, manga
+	Status           string    `json:"status"`    // pending, approved, searching, downloading, processing, completed, failed, cancelled
 	CoverURL         string    `json:"cover_url,omitempty"`
 	Description      string    `json:"description,omitempty"`
 	Year             string    `json:"year,omitempty"`
@@ -30,7 +30,7 @@ type Request struct {
 type Notification struct {
 	ID        int64     `json:"id"`
 	UserID    int64     `json:"user_id"`
-	Type      string    `json:"type"`    // request_completed, request_failed, request_approved, request_attention
+	Type      string    `json:"type"` // request_completed, request_failed, request_approved, request_attention
 	Title     string    `json:"title"`
 	Message   string    `json:"message,omitempty"`
 	RequestID string    `json:"request_id,omitempty"`

@@ -20,21 +20,21 @@ import (
 
 // SeriesInfo holds detected series data.
 type SeriesInfo struct {
-	ID          int64     `json:"id"`
-	SeriesName  string    `json:"series_name"`
-	KnownTotal  int       `json:"known_total"`
-	OwnedCount  int       `json:"owned_count"`
-	OwnedBooks  []string  `json:"owned_books,omitempty"`
-	MissingBooks []string `json:"missing_books,omitempty"`
-	LastChecked time.Time `json:"last_checked"`
+	ID           int64     `json:"id"`
+	SeriesName   string    `json:"series_name"`
+	KnownTotal   int       `json:"known_total"`
+	OwnedCount   int       `json:"owned_count"`
+	OwnedBooks   []string  `json:"owned_books,omitempty"`
+	MissingBooks []string  `json:"missing_books,omitempty"`
+	LastChecked  time.Time `json:"last_checked"`
 }
 
 // SeriesDetector analyzes the library for series patterns.
 type SeriesDetector struct {
-	db          *db.DB
-	searchMgr   *search.Manager
+	db            *db.DB
+	searchMgr     *search.Manager
 	webhookSender *webhook.Sender
-	httpClient  *http.Client
+	httpClient    *http.Client
 }
 
 // NewSeriesDetector creates a new series detector.
@@ -56,8 +56,8 @@ var seriesPatterns = []*regexp.Regexp{
 
 // DetectedSeries represents a series found in the library.
 type DetectedSeries struct {
-	Name        string
-	OwnedBooks  map[int]string // book number -> title
+	Name       string
+	OwnedBooks map[int]string // book number -> title
 }
 
 // DetectSeries scans the library for series patterns and returns detected series.

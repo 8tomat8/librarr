@@ -48,8 +48,8 @@ func (p *Prowlarr) Label() string {
 }
 
 func (p *Prowlarr) Enabled() bool        { return p.cfg.HasProwlarr() }
-func (p *Prowlarr) SearchTab() string     { return p.tab }
-func (p *Prowlarr) DownloadType() string  { return "torrent" }
+func (p *Prowlarr) SearchTab() string    { return p.tab }
+func (p *Prowlarr) DownloadType() string { return "torrent" }
 
 func (p *Prowlarr) Search(ctx context.Context, query string) ([]models.SearchResult, error) {
 	categories := p.categoriesForTab()

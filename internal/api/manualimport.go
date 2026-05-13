@@ -27,12 +27,12 @@ var importableExtensions = map[string]bool{
 
 // ScannedFile represents a file found during directory scan.
 type ScannedFile struct {
-	Path     string `json:"path"`
-	Name     string `json:"name"`
-	Size     int64  `json:"size"`
-	Format   string `json:"format"`
-	Title    string `json:"title"`
-	Author   string `json:"author"`
+	Path   string `json:"path"`
+	Name   string `json:"name"`
+	Size   int64  `json:"size"`
+	Format string `json:"format"`
+	Title  string `json:"title"`
+	Author string `json:"author"`
 }
 
 func (s *Server) handleScanImport(w http.ResponseWriter, r *http.Request) {
