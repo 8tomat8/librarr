@@ -766,6 +766,86 @@ func handleUpdateUser(database *db.DB) http.HandlerFunc {
 	}
 }
 
+// handleChangeOwnPassword handles POST /api/me/password — any authenticated user.
+// Verifies the current password before updating so a stolen session can't reset
+// the password without knowing the existing one.
+func handleChangeOwnPassword(database *db.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		userID := getUserIDFromContext(r)
+		if userID == 0 {
+			writeJSON(w, http.StatusUnauthorized, map[string]interface{}{
+				"success": false,
+				"error":   "Authentication required",
+			})
+			return
+		}
+
+		var req struct {
+			CurrentPassword string `json:"current_password"`
+			NewPassword     string `json:"new_password"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+				"success": false,
+				"error":   "Invalid request body",
+			})
+			return
+		}
+
+		if req.CurrentPassword == "" || req.NewPassword == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+				"success": false,
+				"error":   "Both current_password and new_password are required",
+			})
+			return
+		}
+
+		if len(req.NewPassword) < 6 {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+				"success": false,
+				"error":   "New password must be at least 6 characters",
+			})
+			return
+		}
+
+		user, err := database.GetUser(userID)
+		if err != nil {
+			writeJSON(w, http.StatusNotFound, map[string]interface{}{
+				"success": false,
+				"error":   "User not found",
+			})
+			return
+		}
+
+		if !checkPassword(req.CurrentPassword, user.PasswordHash) {
+			writeJSON(w, http.StatusUnauthorized, map[string]interface{}{
+				"success": false,
+				"error":   "Current password is incorrect",
+			})
+			return
+		}
+
+		hash, err := hashPassword(req.NewPassword)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+				"success": false,
+				"error":   "Failed to hash password",
+			})
+			return
+		}
+		if err := database.UpdateUserPassword(userID, hash); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+				"success": false,
+				"error":   "Failed to update password",
+			})
+			return
+		}
+
+		database.LogActivity(user.Username, "password_changed", "self", "User changed their own password")
+		writeJSON(w, http.StatusOK, map[string]interface{}{"success": true})
+	}
+}
+
 // handleDeleteUser handles DELETE /api/users/{id} — admin only.
 func handleDeleteUser(database *db.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

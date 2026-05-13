@@ -200,6 +200,9 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/invites", requireAdmin(s.handleCreateInvite))
 	s.mux.HandleFunc("DELETE /api/invites/{id}", requireAdmin(s.handleDeleteInvite))
 
+	// Self-service account.
+	s.mux.HandleFunc("POST /api/me/password", handleChangeOwnPassword(s.db))
+
 	// TOTP 2FA.
 	s.mux.HandleFunc("POST /api/totp/setup", handleTOTPSetup(s.db))
 	s.mux.HandleFunc("POST /api/totp/verify", handleTOTPVerify(s.db))
