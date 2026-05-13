@@ -10,9 +10,8 @@ import (
 	"github.com/JeremiahM37/librarr/internal/models"
 )
 
-const olSearchURL = "https://openlibrary.org/search.json"
-
-// OpenLibrary searches the Open Library API for public domain books.
+// OpenLibrary searches a public-domain catalog over Open Library's JSON API.
+// Search and cover endpoints come from the runtime sources registry.
 type OpenLibrary struct {
 	cfg    *config.Config
 	client *http.Client
@@ -30,7 +29,7 @@ func (o *OpenLibrary) SearchTab() string    { return "main" }
 func (o *OpenLibrary) DownloadType() string { return "direct" }
 
 func (o *OpenLibrary) Search(ctx context.Context, query string) ([]models.SearchResult, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", olSearchURL, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", o.cfg.Sources.OpenLibrary.SearchURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -79,7 +78,7 @@ func (o *OpenLibrary) Search(ctx context.Context, query string) ([]models.Search
 
 		coverURL := ""
 		if doc.CoverI > 0 {
-			coverURL = fmt.Sprintf("https://covers.openlibrary.org/b/id/%d-M.jpg", doc.CoverI)
+			coverURL = fmt.Sprintf("%s/b/id/%d-M.jpg", o.cfg.Sources.OpenLibrary.CoverURL, doc.CoverI)
 		}
 
 		iaIDs := doc.IA

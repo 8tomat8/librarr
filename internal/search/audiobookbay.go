@@ -11,28 +11,12 @@ import (
 
 	"github.com/JeremiahM37/librarr/internal/config"
 	"github.com/JeremiahM37/librarr/internal/models"
+	"github.com/JeremiahM37/librarr/internal/sources"
 	"github.com/PuerkitoBio/goquery"
 )
 
-// abbDomains lists AudioBookBay domains to try in order.
-var abbDomains = []string{
-	"audiobookbay.lu",
-	"audiobookbay.li",
-	"audiobookbay.se",
-}
-
-// abbTrackers are default trackers for magnet URI construction.
-var abbTrackers = []string{
-	"udp://tracker.opentrackr.org:1337/announce",
-	"udp://open.stealth.si:80/announce",
-	"udp://exodus.desync.com:6969/announce",
-	"udp://tracker.torrent.eu.org:451/announce",
-	"udp://tracker.tiny-vps.com:6969/announce",
-	"udp://tracker.dler.org:6969/announce",
-	"http://tracker.files.fm:6969/announce",
-}
-
-// AudioBookBay searches AudioBookBay for audiobook torrents.
+// AudioBookBay searches an AudioBookBay-style scrape source for audiobook torrents.
+// Mirrors and trackers are loaded from the runtime sources registry.
 type AudioBookBay struct {
 	cfg    *config.Config
 	client *http.Client
@@ -43,6 +27,9 @@ func NewAudioBookBay(cfg *config.Config, client *http.Client) *AudioBookBay {
 	return &AudioBookBay{cfg: cfg, client: client}
 }
 
+func (a *AudioBookBay) domains() []string  { return a.cfg.Sources.AudioBookBay.Mirrors }
+func (a *AudioBookBay) trackers() []string { return a.cfg.Sources.AudioBookBay.Trackers }
+
 func (a *AudioBookBay) Name() string         { return "audiobookbay" }
 func (a *AudioBookBay) Label() string        { return "AudioBookBay" }
 func (a *AudioBookBay) Enabled() bool        { return true }
@@ -50,7 +37,7 @@ func (a *AudioBookBay) SearchTab() string    { return "audiobook" }
 func (a *AudioBookBay) DownloadType() string { return "torrent" }
 
 func (a *AudioBookBay) Search(ctx context.Context, query string) ([]models.SearchResult, error) {
-	for _, domain := range abbDomains {
+	for _, domain := range a.domains() {
 		results, err := a.searchDomain(ctx, domain, query)
 		if err != nil {
 			slog.Warn("audiobookbay search failed on domain", "domain", domain, "error", err)
@@ -140,13 +127,26 @@ func (a *AudioBookBay) searchDomain(ctx context.Context, domain, query string) (
 	return results, nil
 }
 
-// ResolveABBMagnet fetches the detail page for an ABB result and extracts the magnet URI.
-func ResolveABBMagnet(ctx context.Context, client *http.Client, userAgent, abbPath string) (string, error) {
+// ResolveABBMagnet fetches the detail page for an AudioBookBay result and extracts
+// the magnet URI. mirrors and fallbackTrackers come from the runtime sources
+// registry — pass nil/empty to use embedded defaults.
+func ResolveABBMagnet(ctx context.Context, client *http.Client, userAgent, abbPath string, mirrors, fallbackTrackers []string) (string, error) {
+	if len(mirrors) == 0 || len(fallbackTrackers) == 0 {
+		if def, err := sources.Default(); err == nil {
+			if len(mirrors) == 0 {
+				mirrors = def.AudioBookBay.Mirrors
+			}
+			if len(fallbackTrackers) == 0 {
+				fallbackTrackers = def.AudioBookBay.Trackers
+			}
+		}
+	}
+
 	infoHashRe := regexp.MustCompile(`(?i)Info\s*Hash:.*?<td[^>]*>\s*([0-9a-fA-F]{40})`)
 	trackerRe := regexp.MustCompile(`<td>((?:udp|http)://[^<]+)</td>`)
 	titleRe := regexp.MustCompile(`<h1[^>]*>(.*?)</h1>`)
 
-	for _, domain := range abbDomains {
+	for _, domain := range mirrors {
 		abbURL := fmt.Sprintf("https://%s%s", domain, abbPath)
 
 		req, err := http.NewRequestWithContext(ctx, "GET", abbURL, nil)
@@ -181,7 +181,7 @@ func ResolveABBMagnet(ctx context.Context, client *http.Client, userAgent, abbPa
 			trList = append(trList, m[1])
 		}
 		if len(trList) == 0 {
-			trList = abbTrackers
+			trList = fallbackTrackers
 		}
 
 		// Build tracker params.

@@ -39,8 +39,10 @@ var (
 )
 
 func (s *StandardEbooks) Search(ctx context.Context, query string) ([]models.SearchResult, error) {
-	// Use the search-enabled OPDS endpoint — /feeds/opds/all?query= returns Atom XML
-	u := fmt.Sprintf("https://standardebooks.org/feeds/opds/all?query=%s", url.QueryEscape(query))
+	// Use the search-enabled OPDS endpoint — /feeds/opds/all?query= returns Atom XML.
+	// Base URL comes from the runtime sources registry.
+	base := s.cfg.Sources.StandardEbooks.URL
+	u := fmt.Sprintf("%s/feeds/opds/all?query=%s", base, url.QueryEscape(query))
 	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
 	if err != nil {
 		return nil, err
@@ -107,14 +109,14 @@ func (s *StandardEbooks) Search(ctx context.Context, query string) ([]models.Sea
 			continue
 		}
 
-		// Derive EPUB URL.
+		// Derive EPUB URL using the configured base.
 		seURL := bookID
 		if !strings.HasPrefix(seURL, "http") {
-			seURL = "https://standardebooks.org" + bookID
+			seURL = base + bookID
 		}
-		path := strings.TrimPrefix(seURL, "https://standardebooks.org/ebooks/")
-		epubURL := fmt.Sprintf("https://standardebooks.org/ebooks/%s/downloads/%s.epub",
-			path, strings.ReplaceAll(path, "/", "_"))
+		path := strings.TrimPrefix(seURL, base+"/ebooks/")
+		epubURL := fmt.Sprintf("%s/ebooks/%s/downloads/%s.epub",
+			base, path, strings.ReplaceAll(path, "/", "_"))
 
 		results = append(results, models.SearchResult{
 			Source:      "standardebooks",

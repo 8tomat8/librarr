@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"os"
 	"strconv"
+
+	"github.com/JeremiahM37/librarr/internal/sources"
 )
 
 // Config holds all application configuration loaded from environment variables.
@@ -40,6 +42,11 @@ type Config struct {
 
 	// Anna's Archive
 	AnnasArchiveDomain string
+
+	// Sources is the runtime indexer-endpoint registry. Drivers read URLs,
+	// mirrors, and per-site config from here instead of from hardcoded
+	// constants. Always non-nil after Load() returns.
+	Sources *sources.Registry
 
 	// Circuit Breaker
 	CircuitBreakerThreshold int
@@ -185,9 +192,21 @@ func Load() *Config {
 
 // buildFromEnv returns a Config populated from environment variables and defaults.
 func buildFromEnv() *Config {
+	registry := sources.Load(
+		getEnv("LIBRARR_SOURCES_PATH", ""),
+		getEnv("LIBRARR_SOURCES_URL", ""),
+	).ApplyEnvOverrides(os.Getenv)
+
+	// Honor ANNAS_ARCHIVE_DOMAIN if set; otherwise pick up the registry value.
+	annasDomain := getEnv("ANNAS_ARCHIVE_DOMAIN", "")
+	if annasDomain == "" {
+		annasDomain = registry.Annas.Domain
+	}
+
 	return &Config{
-		Port:   getEnvInt("LIBRARR_PORT", 5050),
-		DBPath: getEnv("LIBRARR_DB_PATH", "/data/librarr.db"),
+		Sources: registry,
+		Port:    getEnvInt("LIBRARR_PORT", 5050),
+		DBPath:  getEnv("LIBRARR_DB_PATH", "/data/librarr.db"),
 
 		QBUrl:               getEnv("QB_URL", ""),
 		QBUser:              getEnv("QB_USER", "admin"),
@@ -211,7 +230,7 @@ func buildFromEnv() *Config {
 
 		TorznabAPIKey: getEnv("TORZNAB_API_KEY", ""),
 
-		AnnasArchiveDomain: getEnv("ANNAS_ARCHIVE_DOMAIN", "annas-archive.gl"),
+		AnnasArchiveDomain: annasDomain,
 
 		CircuitBreakerThreshold: getEnvInt("CIRCUIT_BREAKER_THRESHOLD", 3),
 		CircuitBreakerTimeout:   getEnvInt("CIRCUIT_BREAKER_TIMEOUT", 300),
