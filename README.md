@@ -33,7 +33,7 @@ Librarr searches all configured indexers in parallel, scores results by confiden
 
 ### Search and Scoring
 
-- **Pluggable indexer registry** -- driver kinds listed below; the active indexer list is loaded at runtime from a JSON registry (see [librarr-sources](https://github.com/JeremiahM37/librarr-sources)), overrideable via `LIBRARR_SOURCES_URL` / `LIBRARR_SOURCES_PATH`
+- **Pluggable indexer registry** -- driver kinds listed below; defaults are embedded in the binary and overrideable at runtime via `LIBRARR_SOURCES_URL` / `LIBRARR_SOURCES_PATH`
 - **Confidence scoring** -- 0-100 score with breakdown (title match, author match, format, seeders, file size)
 - **Quality profiles** -- define format ranking and preferred attributes, auto-upgrade existing downloads
 - **Release profiles** -- preferred and excluded words for fine-grained filtering
@@ -103,7 +103,7 @@ Librarr searches all configured indexers in parallel, scores results by confiden
 
 ## Search Sources
 
-Librarr ships with **driver implementations** -- the protocols it can speak. The list of active indexers, their endpoints, mirrors, and enabled flags lives in a JSON registry loaded at runtime. The default registry is hosted at [`librarr-sources`](https://github.com/JeremiahM37/librarr-sources); override with `LIBRARR_SOURCES_URL` or `LIBRARR_SOURCES_PATH`.
+Librarr ships with **driver implementations** -- the protocols it can speak. The list of active indexers, their endpoints, mirrors, and enabled flags lives in a JSON registry. The binary ships an embedded copy of this registry as the default; to override at runtime, set `LIBRARR_SOURCES_URL` (a community-maintained copy lives at [`librarr-sources`](https://github.com/JeremiahM37/librarr-sources)) or `LIBRARR_SOURCES_PATH` to point at your own JSON file.
 
 | Driver | Used for |
 |--------|----------|
