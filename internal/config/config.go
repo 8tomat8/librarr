@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"strconv"
 )
@@ -173,8 +174,17 @@ type Config struct {
 	AuthorCheckIntervalDays   int
 }
 
-// Load reads configuration from environment variables with sensible defaults.
+// Load reads configuration from environment variables with sensible defaults,
+// then applies overrides from the settings file (if present) so values saved
+// from the UI persist across restarts.
 func Load() *Config {
+	cfg := buildFromEnv()
+	cfg.applySettingsFileOverrides()
+	return cfg
+}
+
+// buildFromEnv returns a Config populated from environment variables and defaults.
+func buildFromEnv() *Config {
 	return &Config{
 		Port:   getEnvInt("LIBRARR_PORT", 5050),
 		DBPath: getEnv("LIBRARR_DB_PATH", "/data/librarr.db"),
@@ -382,6 +392,94 @@ func (c *Config) HasZLibrary() bool {
 // HasBookTracker returns true if BookTracker is configured and enabled.
 func (c *Config) HasBookTracker() bool {
 	return c.BookTrackerEnabled && c.BookTrackerURL != "" && c.BookTrackerUser != "" && c.BookTrackerPass != ""
+}
+
+// applySettingsFileOverrides reads the JSON settings file at c.SettingsFile (if
+// it exists) and overrides matching string/bool/int fields on the Config.
+// Missing or unparseable files are silently ignored so the env-only path keeps
+// working — this is best-effort layering, not a hard config source.
+func (c *Config) applySettingsFileOverrides() {
+	if c.SettingsFile == "" {
+		return
+	}
+	data, err := os.ReadFile(c.SettingsFile)
+	if err != nil {
+		return
+	}
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return
+	}
+
+	strPtrs := map[string]*string{
+		"qb_url":                   &c.QBUrl,
+		"qb_user":                  &c.QBUser,
+		"qb_pass":                  &c.QBPass,
+		"prowlarr_url":             &c.ProwlarrURL,
+		"prowlarr_api_key":         &c.ProwlarrAPIKey,
+		"sabnzbd_url":              &c.SABnzbdURL,
+		"sabnzbd_api_key":          &c.SABnzbdAPIKey,
+		"sabnzbd_category":         &c.SABnzbdCategory,
+		"abs_url":                  &c.ABSURL,
+		"abs_token":                &c.ABSToken,
+		"abs_library_id":           &c.ABSLibraryID,
+		"abs_ebook_library_id":     &c.ABSEbookLibraryID,
+		"abs_public_url":           &c.ABSPublicURL,
+		"kavita_url":               &c.KavitaURL,
+		"kavita_user":              &c.KavitaUser,
+		"kavita_pass":              &c.KavitaPass,
+		"kavita_library_path":      &c.KavitaLibraryPath,
+		"kavita_manga_library_path": &c.KavitaMangaLibraryPath,
+		"kavita_public_url":        &c.KavitaPublicURL,
+		"komga_url":                &c.KomgaURL,
+		"komga_user":                &c.KomgaUser,
+		"komga_pass":               &c.KomgaPass,
+		"komga_library_id":         &c.KomgaLibraryID,
+		"komga_library_path":       &c.KomgaLibraryPath,
+		"calibre_url":              &c.CalibreURL,
+		"calibre_library_path":     &c.CalibreLibraryPath,
+		"annas_archive_domain":     &c.AnnasArchiveDomain,
+		"ebook_dir":                &c.EbookDir,
+		"audiobook_dir":            &c.AudiobookDir,
+		"manga_dir":                &c.MangaDir,
+		"incoming_dir":             &c.IncomingDir,
+		"manga_incoming_dir":       &c.MangaIncomingDir,
+		"flibusta_url":             &c.FlibustaURL,
+	}
+	for key, fieldPtr := range strPtrs {
+		v, ok := raw[key]
+		if !ok {
+			continue
+		}
+		s, isStr := v.(string)
+		if !isStr || s == "" {
+			continue
+		}
+		*fieldPtr = s
+	}
+
+	boolPtrs := map[string]*bool{
+		"file_org_enabled":             &c.FileOrgEnabled,
+		"rate_limit_enabled":           &c.RateLimitEnabled,
+		"metrics_enabled":              &c.MetricsEnabled,
+		"webnovel_enabled":             &c.WebNovelEnabled,
+		"mangadex_enabled":             &c.MangaDexEnabled,
+		"flibusta_enabled":             &c.FlibustaEnabled,
+		"zlibrary_enabled":             &c.ZLibraryEnabled,
+		"remove_torrent_after_import":  &c.RemoveTorrentAfterImport,
+		"foreign_lang_filter":          &c.ForeignLangFilter,
+	}
+	for key, fieldPtr := range boolPtrs {
+		v, ok := raw[key]
+		if !ok {
+			continue
+		}
+		b, isBool := v.(bool)
+		if !isBool {
+			continue
+		}
+		*fieldPtr = b
+	}
 }
 
 func getEnv(key, fallback string) string {

@@ -110,6 +110,110 @@ func TestLoad_EnvOverrides(t *testing.T) {
 	}
 }
 
+func TestLoad_SettingsFileOverridesEnv(t *testing.T) {
+	// Env says one thing; settings file should win.
+	os.Setenv("PROWLARR_URL", "http://from-env:9696")
+	os.Setenv("PROWLARR_API_KEY", "env-key")
+	os.Setenv("REMOVE_TORRENT_AFTER_IMPORT", "true")
+	defer func() {
+		os.Unsetenv("PROWLARR_URL")
+		os.Unsetenv("PROWLARR_API_KEY")
+		os.Unsetenv("REMOVE_TORRENT_AFTER_IMPORT")
+	}()
+
+	dir := t.TempDir()
+	settingsPath := dir + "/settings.json"
+	body := `{
+		"prowlarr_url": "http://from-file:9696",
+		"prowlarr_api_key": "file-key",
+		"remove_torrent_after_import": false
+	}`
+	if err := os.WriteFile(settingsPath, []byte(body), 0600); err != nil {
+		t.Fatalf("write settings file: %v", err)
+	}
+	os.Setenv("SETTINGS_FILE", settingsPath)
+	defer os.Unsetenv("SETTINGS_FILE")
+
+	cfg := Load()
+
+	if cfg.ProwlarrURL != "http://from-file:9696" {
+		t.Errorf("settings file should override env URL, got %q", cfg.ProwlarrURL)
+	}
+	if cfg.ProwlarrAPIKey != "file-key" {
+		t.Errorf("settings file should override env API key, got %q", cfg.ProwlarrAPIKey)
+	}
+	if cfg.RemoveTorrentAfterImport {
+		t.Error("settings file should override env bool")
+	}
+}
+
+func TestLoad_SettingsFileMissing_NoError(t *testing.T) {
+	os.Setenv("SETTINGS_FILE", "/nonexistent/path/settings.json")
+	os.Setenv("PROWLARR_URL", "http://env-only:9696")
+	defer func() {
+		os.Unsetenv("SETTINGS_FILE")
+		os.Unsetenv("PROWLARR_URL")
+	}()
+
+	cfg := Load()
+	if cfg.ProwlarrURL != "http://env-only:9696" {
+		t.Errorf("missing settings file should not clobber env values, got %q", cfg.ProwlarrURL)
+	}
+}
+
+func TestLoad_SettingsFileTypeMismatch_IgnoresBadValues(t *testing.T) {
+	// A JSON number where the field expects a string, and a string where the
+	// field expects a bool — neither should override the env value. Without
+	// the type guards in applySettingsFileOverrides, the runtime cfg would
+	// hold nonsense values that the rest of the app would then dereference.
+	os.Setenv("PROWLARR_URL", "http://env-only:9696")
+	os.Setenv("FILE_ORG_ENABLED", "true")
+	defer func() {
+		os.Unsetenv("PROWLARR_URL")
+		os.Unsetenv("FILE_ORG_ENABLED")
+	}()
+
+	dir := t.TempDir()
+	settingsPath := dir + "/settings.json"
+	body := `{
+		"prowlarr_url": 12345,
+		"file_org_enabled": "not_a_bool"
+	}`
+	if err := os.WriteFile(settingsPath, []byte(body), 0600); err != nil {
+		t.Fatalf("write settings file: %v", err)
+	}
+	os.Setenv("SETTINGS_FILE", settingsPath)
+	defer os.Unsetenv("SETTINGS_FILE")
+
+	cfg := Load()
+
+	if cfg.ProwlarrURL != "http://env-only:9696" {
+		t.Errorf("number value for string field should be ignored, got %q", cfg.ProwlarrURL)
+	}
+	if !cfg.FileOrgEnabled {
+		t.Error("string value for bool field should be ignored, env true should persist")
+	}
+}
+
+func TestLoad_SettingsFileMalformed_NoError(t *testing.T) {
+	dir := t.TempDir()
+	settingsPath := dir + "/settings.json"
+	if err := os.WriteFile(settingsPath, []byte("{ this is not valid json"), 0600); err != nil {
+		t.Fatalf("write settings file: %v", err)
+	}
+	os.Setenv("SETTINGS_FILE", settingsPath)
+	os.Setenv("PROWLARR_URL", "http://env-only:9696")
+	defer func() {
+		os.Unsetenv("SETTINGS_FILE")
+		os.Unsetenv("PROWLARR_URL")
+	}()
+
+	cfg := Load()
+	if cfg.ProwlarrURL != "http://env-only:9696" {
+		t.Errorf("malformed settings file should not clobber env values, got %q", cfg.ProwlarrURL)
+	}
+}
+
 func TestGetEnvInt_InvalidFallback(t *testing.T) {
 	os.Setenv("TEST_INT_INVALID", "not_a_number")
 	defer os.Unsetenv("TEST_INT_INVALID")

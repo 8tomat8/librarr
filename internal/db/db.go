@@ -89,6 +89,7 @@ func (d *DB) migrate() error {
 			detail TEXT NOT NULL DEFAULT '',
 			library_item_id INTEGER,
 			job_id TEXT NOT NULL DEFAULT '',
+			user TEXT NOT NULL DEFAULT '',
 			timestamp REAL NOT NULL DEFAULT (strftime('%s','now'))
 		)`,
 		`CREATE TABLE IF NOT EXISTS download_jobs (
@@ -299,22 +300,27 @@ func (d *DB) migrate() error {
 		created_at REAL NOT NULL DEFAULT (strftime('%s','now'))
 	)`)
 
-	// Additive migrations — add columns that may not exist yet.
+	for _, m := range migrations {
+		if _, err := d.db.Exec(m); err != nil {
+			return fmt.Errorf("migration failed: %w\nSQL: %s", err, m)
+		}
+	}
+
+	// Additive migrations — add columns that may not exist on databases
+	// created by older versions of the schema. Run AFTER the CREATE TABLE
+	// migrations so the target tables already exist; otherwise the ALTER
+	// silently no-ops on a fresh DB and a later INSERT against the column
+	// fails. Duplicate-column errors are expected on already-upgraded DBs
+	// and are ignored.
 	addColumns := []string{
 		`ALTER TABLE download_jobs ADD COLUMN status_history TEXT NOT NULL DEFAULT '[]'`,
 		`ALTER TABLE activity_log ADD COLUMN user TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE reading_history ADD COLUMN status TEXT NOT NULL DEFAULT ''`,
 	}
 	for _, stmt := range addColumns {
-		// Ignore "duplicate column" errors.
 		d.db.Exec(stmt)
 	}
 
-	for _, m := range migrations {
-		if _, err := d.db.Exec(m); err != nil {
-			return fmt.Errorf("migration failed: %w\nSQL: %s", err, m)
-		}
-	}
 	return nil
 }
 
