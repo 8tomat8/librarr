@@ -3,6 +3,8 @@ package api
 import (
 	"fmt"
 	"net/http"
+
+	"github.com/JeremiahM37/librarr/internal/models"
 )
 
 func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
@@ -21,7 +23,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	author := r.URL.Query().Get("author")
 	results, elapsed := s.searchMgr.SearchWithAuthor(r.Context(), "main", query, author)
 	if results == nil {
-		results = nil // ensure null doesn't slip through
+		results = []models.SearchResult{}
 	}
 
 	resp := map[string]interface{}{
@@ -53,6 +55,9 @@ func (s *Server) handleSearchAudiobooks(w http.ResponseWriter, r *http.Request) 
 
 	author := r.URL.Query().Get("author")
 	results, elapsed := s.searchMgr.SearchWithAuthor(r.Context(), "audiobook", query, author)
+	if results == nil {
+		results = []models.SearchResult{}
+	}
 
 	resp := map[string]interface{}{
 		"results":        results,
@@ -82,6 +87,9 @@ func (s *Server) handleSearchManga(w http.ResponseWriter, r *http.Request) {
 
 	author := r.URL.Query().Get("author")
 	results, elapsed := s.searchMgr.SearchWithAuthor(r.Context(), "manga", query, author)
+	if results == nil {
+		results = []models.SearchResult{}
+	}
 
 	resp := map[string]interface{}{
 		"results":        results,

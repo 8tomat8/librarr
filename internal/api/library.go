@@ -22,8 +22,8 @@ func (s *Server) handleLibrary(w http.ResponseWriter, r *http.Request) {
 	}
 
 	mediaType := r.URL.Query().Get("type")
-	limit := queryInt(r, "limit", 50)
-	offset := queryInt(r, "offset", 0)
+	limit := queryBoundedInt(r, "limit", 50, 1, 500)
+	offset := queryBoundedInt(r, "offset", 0, 0, 1_000_000)
 	tagFilter := r.URL.Query().Get("tag")
 
 	// If filtering by tag name, look up tag ID and use tag-based query.
@@ -91,8 +91,14 @@ func (s *Server) handleLibrary(w http.ResponseWriter, r *http.Request) {
 // handleLibraryEbooksFromABS pulls ebooks from ABS ebook library (with covers + series).
 func (s *Server) handleLibraryEbooksFromABS(w http.ResponseWriter, r *http.Request) {
 	page := queryInt(r, "page", 1)
+	if page < 1 {
+		page = 1
+	}
 	query := r.URL.Query().Get("q")
-	limit := 100 // Larger page size so series group together
+	limit := queryInt(r, "limit", 100) // default 100 so series group together
+	if limit < 1 || limit > 500 {
+		limit = 100
+	}
 
 	absURL := fmt.Sprintf("%s/api/libraries/%s/items", s.cfg.ABSURL, s.cfg.ABSEbookLibraryID)
 	params := url.Values{
@@ -188,8 +194,8 @@ func (s *Server) handleStats(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request) {
-	limit := queryInt(r, "limit", 50)
-	offset := queryInt(r, "offset", 0)
+	limit := queryBoundedInt(r, "limit", 50, 1, 500)
+	offset := queryBoundedInt(r, "offset", 0, 0, 1_000_000)
 
 	events, err := s.db.GetActivity(limit, offset)
 	if err != nil {
@@ -220,6 +226,22 @@ func queryInt(r *http.Request, key string, fallback int) int {
 	}
 	n, err := strconv.Atoi(v)
 	if err != nil {
+		return fallback
+	}
+	return n
+}
+
+// queryBoundedInt parses an int query param and clamps it to [min, max].
+// Returns fallback when the param is missing, unparseable, or out of bounds.
+// Use this for pagination limits to avoid `limit=-1` returning unbounded rows
+// or `limit=999999` letting a caller pull the entire table.
+func queryBoundedInt(r *http.Request, key string, fallback, minVal, maxVal int) int {
+	v := r.URL.Query().Get(key)
+	if v == "" {
+		return fallback
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < minVal || n > maxVal {
 		return fallback
 	}
 	return n

@@ -483,6 +483,14 @@ func (s *Server) handleAddWishlist(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	// Cap user-supplied strings so a misbehaving client can't bloat the DB.
+	if len(req.Title) > 500 || len(req.Author) > 500 || len(req.MediaType) > 50 {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"success": false,
+			"error":   "Field exceeds maximum length",
+		})
+		return
+	}
 
 	id, err := s.db.AddWishlistItem(req.Title, req.Author, req.MediaType)
 	if err != nil {
