@@ -267,7 +267,6 @@ All configuration is via environment variables. Every variable has a sensible de
 |----------|---------|-------------|
 | `LIBRARR_SOURCES_URL` | | URL of a JSON sources registry; fetched at startup, falls back to embedded default if unreachable |
 | `LIBRARR_SOURCES_PATH` | | Local path to a sources registry JSON file; takes precedence over URL |
-| `LIBRARR_SOURCES_REFRESH_MIN` | `0` | If > 0, re-fetch the URL registry every N minutes |
 
 Legacy per-source env vars (`ANNAS_ARCHIVE_DOMAIN`, `PROWLARR_URL`, etc.) continue to be honored and override values loaded from the registry.
 

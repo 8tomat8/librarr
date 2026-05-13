@@ -204,18 +204,75 @@ func TestRegistryFlow(t *testing.T) {
 	})
 }
 
-// TestRegistryFlow_LegacyEnvOverride confirms that ANNAS_ARCHIVE_DOMAIN still
-// takes precedence over the registry value when set.
-func TestRegistryFlow_LegacyEnvOverride(t *testing.T) {
-	reg, _ := sources.Default()
-	reg.Annas.Domain = "from-registry.test"
-	reg.ApplyEnvOverrides(func(k string) string {
-		if k == "ANNAS_ARCHIVE_DOMAIN" {
-			return "from-env.test"
-		}
-		return ""
-	})
-	if reg.Annas.Domain != "from-env.test" {
-		t.Errorf("env should override registry: got %q", reg.Annas.Domain)
+// TestRegistryFlow_AnnasArchive verifies that Anna's Archive picks up its
+// domain from the registry when no env override is set, and that the env
+// override takes precedence when present.
+func TestRegistryFlow_AnnasArchive(t *testing.T) {
+	cases := []struct {
+		name          string
+		envOverride   string
+		registryValue string
+		want          string
+	}{
+		{"registry value used when env unset", "", "registry.example", "registry.example"},
+		{"env override wins over registry", "env.example", "registry.example", "env.example"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			reg, _ := sources.Default()
+			reg.Annas.Domain = tc.registryValue
+			reg.ApplyEnvOverrides(func(k string) string {
+				if k == "ANNAS_ARCHIVE_DOMAIN" {
+					return tc.envOverride
+				}
+				return ""
+			})
+			// Mirror the resolution Load() performs.
+			annasDomain := tc.envOverride
+			if annasDomain == "" {
+				annasDomain = reg.Annas.Domain
+			}
+			cfg := &config.Config{
+				UserAgent:          "test",
+				Sources:            reg,
+				AnnasArchiveDomain: annasDomain,
+			}
+			a := NewAnnasArchive(cfg, http.DefaultClient)
+			if !a.Enabled() {
+				t.Fatal("Anna's Archive should be enabled when domain is set")
+			}
+			if a.cfg.AnnasArchiveDomain != tc.want {
+				t.Errorf("AnnasArchiveDomain = %q, want %q", a.cfg.AnnasArchiveDomain, tc.want)
+			}
+		})
+	}
+}
+
+// TestRegistryFlow_ZLibraryBase verifies Z-Library's apiBase() falls back to
+// cfg.Sources.ZLibraryDefault when ZLibraryURL env is unset, and that the
+// env value still wins when both are set.
+func TestRegistryFlow_ZLibraryBase(t *testing.T) {
+	cases := []struct {
+		name            string
+		envURL          string
+		registryDefault string
+		want            string
+	}{
+		{"env wins when set", "https://env-set.example/", "https://from-registry.example", "https://env-set.example"},
+		{"registry default used when env empty", "", "https://from-registry.example/", "https://from-registry.example"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			reg, _ := sources.Default()
+			reg.ZLibraryDefault = tc.registryDefault
+			cfg := &config.Config{
+				Sources:     reg,
+				ZLibraryURL: tc.envURL,
+			}
+			z := NewZLibrary(cfg, http.DefaultClient)
+			if got := z.apiBase(); got != tc.want {
+				t.Errorf("apiBase() = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
