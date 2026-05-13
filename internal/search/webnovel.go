@@ -218,9 +218,11 @@ func (w *WebNovel) searchNovelBin(ctx context.Context, query string) []webNovelR
 	defer resp.Body.Close()
 
 	body := wnReadBodyString(resp)
-	// Match links to novel-book pages on the configured base host.
-	escapedBase := regexp.QuoteMeta(strings.TrimSuffix(site.BaseURL, "/"))
-	re := regexp.MustCompile(`<a\s+href="(` + escapedBase + `/novel-book/[^"]+)"[^>]*title="([^"]+)"`)
+	// Match links to novel-book pages on the configured base host. Accept either
+	// http:// or https:// so a scheme mismatch in the served HTML doesn't drop
+	// results (preserves pre-registry behavior).
+	host := strings.TrimSuffix(strings.TrimPrefix(strings.TrimPrefix(site.BaseURL, "https://"), "http://"), "/")
+	re := regexp.MustCompile(`<a\s+href="(https?://` + regexp.QuoteMeta(host) + `/novel-book/[^"]+)"[^>]*title="([^"]+)"`)
 	results := wnExtractRegexResults(body, re, "", site.Label)
 
 	var filtered []webNovelResult
