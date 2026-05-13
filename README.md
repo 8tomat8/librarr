@@ -7,7 +7,9 @@
 
 **The missing *arr for books.** Self-hosted book, audiobook, and manga search and download manager -- like Sonarr/Radarr but for your reading library.
 
-Librarr searches all configured indexers in parallel, scores results by confidence, and auto-imports into your Calibre, Audiobookshelf, Kavita, or Komga library. Single ~17MB Go binary. No runtime dependencies.
+Librarr searches all configured indexers in parallel, scores results by confidence, and auto-imports into your Calibre, Audiobookshelf, Kavita, or Komga library. Single ~17MB Go binary, no runtime dependencies — **~14MB RSS idle** in a real homelab[^1], typically 10-20× lower than the .NET-based *arr apps.
+
+[^1]: Measured on v1.1.0 in an LXC on Debian 12 (Mar 2026). Reference: Sonarr 4.x ≈ 240MB, Radarr 5.x ≈ 220MB on the same host.
 
 ## Screenshots
 
@@ -28,6 +30,7 @@ Librarr searches all configured indexers in parallel, scores results by confiden
 - **Series auto-complete** -- detects gaps in series and searches for missing volumes
 - **Torznab API** -- add Librarr as an indexer in Prowlarr or Readarr (it works both ways)
 - **OPDS 1.2 feed** -- browse your library from any e-reader app
+- **Tiny footprint** -- ~14MB idle RSS, runs comfortably on a Pi or any thermally-constrained mini-PC
 
 ## Features
 
