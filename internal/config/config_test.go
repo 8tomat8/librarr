@@ -161,6 +161,40 @@ func TestLoad_SettingsFileMissing_NoError(t *testing.T) {
 	}
 }
 
+func TestLoad_SettingsFileTypeMismatch_IgnoresBadValues(t *testing.T) {
+	// A JSON number where the field expects a string, and a string where the
+	// field expects a bool — neither should override the env value. Without
+	// the type guards in applySettingsFileOverrides, the runtime cfg would
+	// hold nonsense values that the rest of the app would then dereference.
+	os.Setenv("PROWLARR_URL", "http://env-only:9696")
+	os.Setenv("FILE_ORG_ENABLED", "true")
+	defer func() {
+		os.Unsetenv("PROWLARR_URL")
+		os.Unsetenv("FILE_ORG_ENABLED")
+	}()
+
+	dir := t.TempDir()
+	settingsPath := dir + "/settings.json"
+	body := `{
+		"prowlarr_url": 12345,
+		"file_org_enabled": "not_a_bool"
+	}`
+	if err := os.WriteFile(settingsPath, []byte(body), 0600); err != nil {
+		t.Fatalf("write settings file: %v", err)
+	}
+	os.Setenv("SETTINGS_FILE", settingsPath)
+	defer os.Unsetenv("SETTINGS_FILE")
+
+	cfg := Load()
+
+	if cfg.ProwlarrURL != "http://env-only:9696" {
+		t.Errorf("number value for string field should be ignored, got %q", cfg.ProwlarrURL)
+	}
+	if !cfg.FileOrgEnabled {
+		t.Error("string value for bool field should be ignored, env true should persist")
+	}
+}
+
 func TestLoad_SettingsFileMalformed_NoError(t *testing.T) {
 	dir := t.TempDir()
 	settingsPath := dir + "/settings.json"
