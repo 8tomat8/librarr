@@ -1,0 +1,71 @@
+name: Bug report
+description: Report a defect in Librarr (the driver framework, UI, import pipeline, or APIs).
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ### Please read before filing
+
+        Librarr is a generic search aggregator. **Describe defects in generic terms** — do not name specific copyrighted works, authors, or titles in your reproduction. Examples:
+
+        - ✅ "search for a 4-word fiction title returns zero results from the OPDS driver"
+        - ✅ "import fails when an EPUB filename contains a comma"
+        - ❌ "search for `<specific bestseller>` returns nothing"
+
+        Issues that name specific copyrighted titles may be edited or closed without further notice. Information about which indexer endpoints to add or remove belongs on [librarr-sources](https://github.com/JeremiahM37/librarr-sources), not here.
+
+  - type: input
+    id: version
+    attributes:
+      label: Librarr version
+      placeholder: "e.g. v1.0.3, commit abc1234, or ghcr.io/jeremiahm37/librarr:latest digest"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: Install method
+      options:
+        - Docker (compose)
+        - Docker (raw)
+        - Bare binary
+        - Built from source
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: Generic description of the defect. Logs welcome (redact secrets and specific titles).
+      placeholder: "Driver X returned an unexpected status code and the worker entered an error loop instead of falling through."
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected to happen
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Use generic example data — placeholder titles, fake authors, synthetic IDs.
+      placeholder: |
+        1. Configure driver X with `EXAMPLE_VAR=...`
+        2. Search for a generic 3-word title
+        3. Observe the worker log line `...`
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Paste sanitized logs. Replace specific titles/authors/hashes with `<placeholder>`.
+      render: shell

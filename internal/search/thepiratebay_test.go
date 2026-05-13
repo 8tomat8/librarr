@@ -9,7 +9,16 @@ import (
 	"time"
 
 	"github.com/JeremiahM37/librarr/internal/config"
+	"github.com/JeremiahM37/librarr/internal/sources"
 )
+
+// testCfgWithSourcesURL returns a config wired up with a registry whose
+// ThePirateBay endpoint points at the given test-server URL.
+func testCfgWithSourcesURL(tpbURL string) *config.Config {
+	reg, _ := sources.Default()
+	reg.ThePirateBay.URL = tpbURL
+	return &config.Config{TPBEnabled: true, UserAgent: "test", Sources: reg}
+}
 
 // apibayFixture is a two-item response; the second entry has 0 seeders
 // and should be filtered out. The third entry is a duplicate info_hash
@@ -30,12 +39,7 @@ func TestThePirateBaySearch(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	// Point the source at the test server by overriding the package-level base.
-	orig := tpbAPIBase
-	tpbAPIBase = srv.URL
-	defer func() { tpbAPIBase = orig }()
-
-	cfg := &config.Config{TPBEnabled: true, UserAgent: "test"}
+	cfg := testCfgWithSourcesURL(srv.URL)
 	s := NewThePirateBay(cfg, &http.Client{Timeout: 5 * time.Second}, "main")
 
 	if !s.Enabled() {
@@ -87,11 +91,7 @@ func TestThePirateBayAudiobookTab(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	orig := tpbAPIBase
-	tpbAPIBase = srv.URL
-	defer func() { tpbAPIBase = orig }()
-
-	cfg := &config.Config{TPBEnabled: true, UserAgent: "test"}
+	cfg := testCfgWithSourcesURL(srv.URL)
 	s := NewThePirateBay(cfg, &http.Client{Timeout: 5 * time.Second}, "audiobook")
 
 	if s.Name() != "tpb_audiobook" {

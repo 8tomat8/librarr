@@ -13,9 +13,8 @@ import (
 	"github.com/JeremiahM37/librarr/internal/models"
 )
 
-const nyaaRSS = "https://nyaa.si/"
-
-// NyaaManga searches Nyaa.si for manga torrents.
+// NyaaManga searches a Nyaa-style RSS source for manga torrents. RSS base URL
+// comes from the runtime sources registry.
 type NyaaManga struct {
 	cfg    *config.Config
 	client *http.Client
@@ -50,7 +49,7 @@ type nyaaRSSItem struct {
 }
 
 func (n *NyaaManga) Search(ctx context.Context, query string) ([]models.SearchResult, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", nyaaRSS, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", n.cfg.Sources.Nyaa.URL, nil)
 	if err != nil {
 		return nil, err
 	}

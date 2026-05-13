@@ -9,14 +9,15 @@ import (
 	"testing"
 
 	"github.com/JeremiahM37/librarr/internal/config"
+	"github.com/JeremiahM37/librarr/internal/sources"
 )
 
-// Helper: swap libgenMirrors for a test and restore afterwards.
-func withMirrors(t *testing.T, mirrors []string) {
-	t.Helper()
-	orig := libgenMirrors
-	libgenMirrors = mirrors
-	t.Cleanup(func() { libgenMirrors = orig })
+// newTestConfig builds a Config with the given libgen mirrors injected into
+// the runtime sources registry.
+func newTestConfig(mirrors []string) *config.Config {
+	reg, _ := sources.Default()
+	reg.LibgenMirrors = mirrors
+	return &config.Config{UserAgent: "test", Sources: reg}
 }
 
 // TestFetchLibgenDownloadURL_FirstMirrorWorks is the happy path.
@@ -26,8 +27,7 @@ func TestFetchLibgenDownloadURL_FirstMirrorWorks(t *testing.T) {
 	}))
 	defer server.Close()
 
-	withMirrors(t, []string{server.URL})
-	cfg := &config.Config{UserAgent: "test"}
+	cfg := newTestConfig([]string{server.URL})
 	d := NewDirectDownloader(cfg, server.Client())
 
 	url, err := d.fetchLibgenDownloadURL("abc123", nil)
@@ -57,8 +57,7 @@ func TestFetchLibgenDownloadURL_FailsOverOn500(t *testing.T) {
 	}))
 	defer working.Close()
 
-	withMirrors(t, []string{broken.URL, working.URL})
-	cfg := &config.Config{UserAgent: "test"}
+	cfg := newTestConfig([]string{broken.URL, working.URL})
 	d := NewDirectDownloader(cfg, working.Client())
 
 	url, err := d.fetchLibgenDownloadURL("abc", nil)
@@ -87,8 +86,7 @@ func TestFetchLibgenDownloadURL_AllMirrorsFail(t *testing.T) {
 	}))
 	defer m2.Close()
 
-	withMirrors(t, []string{m1.URL, m2.URL})
-	cfg := &config.Config{UserAgent: "test"}
+	cfg := newTestConfig([]string{m1.URL, m2.URL})
 	d := NewDirectDownloader(cfg, m1.Client())
 
 	_, err := d.fetchLibgenDownloadURL("abc", nil)
@@ -113,8 +111,7 @@ func TestFetchLibgenDownloadURL_MirrorLacksBook(t *testing.T) {
 	}))
 	defer m2.Close()
 
-	withMirrors(t, []string{m1.URL, m2.URL})
-	cfg := &config.Config{UserAgent: "test"}
+	cfg := newTestConfig([]string{m1.URL, m2.URL})
 	d := NewDirectDownloader(cfg, m1.Client())
 
 	url, err := d.fetchLibgenDownloadURL("xyz", nil)
@@ -133,9 +130,8 @@ func TestFetchLibgenDownloadURL_NetworkErrorFailsOver(t *testing.T) {
 	}))
 	defer working.Close()
 
-	// Point to a port that's closed
-	withMirrors(t, []string{"http://127.0.0.1:1", working.URL})
-	cfg := &config.Config{UserAgent: "test"}
+	// Point to a port that's closed.
+	cfg := newTestConfig([]string{"http://127.0.0.1:1", working.URL})
 	d := NewDirectDownloader(cfg, working.Client())
 
 	url, err := d.fetchLibgenDownloadURL("abc", nil)
@@ -158,8 +154,7 @@ func TestFetchLibgenDownloadURL_ProgressCallback(t *testing.T) {
 	}))
 	defer m2.Close()
 
-	withMirrors(t, []string{m1.URL, m2.URL})
-	cfg := &config.Config{UserAgent: "test"}
+	cfg := newTestConfig([]string{m1.URL, m2.URL})
 	d := NewDirectDownloader(cfg, m1.Client())
 
 	var messages []string
@@ -184,15 +179,19 @@ func TestFetchLibgenDownloadURL_ProgressCallback(t *testing.T) {
 	}
 }
 
-// TestLibgenMirrors_Configured ensures we have multiple mirrors so a single
-// mirror outage doesn't break downloads entirely.
+// TestLibgenMirrors_Configured ensures the embedded sources registry ships
+// multiple mirrors so a single mirror outage doesn't break downloads entirely.
 func TestLibgenMirrors_Configured(t *testing.T) {
-	if len(libgenMirrors) < 3 {
-		t.Errorf("should have at least 3 libgen mirrors for redundancy, got %d", len(libgenMirrors))
+	reg, err := sources.Default()
+	if err != nil {
+		t.Fatalf("load embedded sources registry: %v", err)
 	}
-	for _, m := range libgenMirrors {
-		if !strings.HasPrefix(m, "https://libgen.") {
-			t.Errorf("unexpected mirror URL: %s", m)
+	if len(reg.LibgenMirrors) < 3 {
+		t.Errorf("should have at least 3 libgen mirrors for redundancy, got %d", len(reg.LibgenMirrors))
+	}
+	for _, m := range reg.LibgenMirrors {
+		if !strings.HasPrefix(m, "http://") && !strings.HasPrefix(m, "https://") {
+			t.Errorf("mirror URL missing scheme: %s", m)
 		}
 	}
 }

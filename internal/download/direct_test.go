@@ -322,8 +322,7 @@ func TestFetchLibgenDownloadURL_ProgressBeforeRequest(t *testing.T) {
 	}))
 	defer m2.Close()
 
-	withMirrors(t, []string{m1.URL, m2.URL})
-	cfg := &config.Config{UserAgent: "test"}
+	cfg := newTestConfig([]string{m1.URL, m2.URL})
 	d := NewDirectDownloader(cfg, m1.Client())
 
 	_, err := d.fetchLibgenDownloadURL("a", func(msg string) {

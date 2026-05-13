@@ -11,9 +11,8 @@ import (
 	"github.com/JeremiahM37/librarr/internal/models"
 )
 
-const librivoxAPI = "https://librivox.org/api/feed/audiobooks"
-
-// Librivox searches Librivox for free public domain audiobooks.
+// Librivox searches a Librivox-style public-domain audiobook feed. Endpoint
+// comes from the runtime sources registry.
 type Librivox struct {
 	cfg    *config.Config
 	client *http.Client
@@ -54,7 +53,7 @@ func (l *Librivox) Search(ctx context.Context, query string) ([]models.SearchRes
 	var results []models.SearchResult
 
 	for _, field := range []string{"title", "author"} {
-		req, err := http.NewRequestWithContext(ctx, "GET", librivoxAPI, nil)
+		req, err := http.NewRequestWithContext(ctx, "GET", l.cfg.Sources.Librivox.URL, nil)
 		if err != nil {
 			continue
 		}

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Indexer registry edits (add / remove / fix an endpoint)
+    url: https://github.com/JeremiahM37/librarr-sources/issues
+    about: This repository hosts driver implementations only. Requests to add, remove, or update specific indexer endpoints belong on the librarr-sources companion repository.
+  - name: Question or discussion
+    url: https://github.com/JeremiahM37/librarr/discussions
+    about: For setup help, configuration questions, or general discussion, please use Discussions instead of opening an issue.

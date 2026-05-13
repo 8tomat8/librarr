@@ -7,13 +7,13 @@
 
 **The missing *arr for books.** Self-hosted book, audiobook, and manga search and download manager -- like Sonarr/Radarr but for your reading library.
 
-Librarr searches 13 sources simultaneously, scores results by confidence, and auto-imports into your Calibre, Audiobookshelf, Kavita, or Komga library. Single ~17MB Go binary. No runtime dependencies.
+Librarr searches all configured indexers in parallel, scores results by confidence, and auto-imports into your Calibre, Audiobookshelf, Kavita, or Komga library. Single ~17MB Go binary. No runtime dependencies.
 
 ## Screenshots
 
 | Search | Library |
 |---|---|
-| ![Search across 13 sources with confidence scoring](docs/screenshots/search.png) | ![Unified library view across ebooks, audiobooks, and manga](docs/screenshots/library.png) |
+| ![Parallel indexer search with confidence scoring](docs/screenshots/search.png) | ![Unified library view across ebooks, audiobooks, and manga](docs/screenshots/library.png) |
 
 | Wishlist | Settings |
 |---|---|
@@ -33,7 +33,7 @@ Librarr searches 13 sources simultaneously, scores results by confidence, and au
 
 ### Search and Scoring
 
-- **17 search sources** in one UI (see table below)
+- **Pluggable indexer registry** -- driver kinds listed below; the active indexer list is loaded at runtime from a JSON registry (see [librarr-sources](https://github.com/JeremiahM37/librarr-sources)), overrideable via `LIBRARR_SOURCES_URL` / `LIBRARR_SOURCES_PATH`
 - **Confidence scoring** -- 0-100 score with breakdown (title match, author match, format, seeders, file size)
 - **Quality profiles** -- define format ranking and preferred attributes, auto-upgrade existing downloads
 - **Release profiles** -- preferred and excluded words for fine-grained filtering
@@ -103,25 +103,20 @@ Librarr searches 13 sources simultaneously, scores results by confidence, and au
 
 ## Search Sources
 
-| Source | Type | Content |
-|--------|------|---------|
-| Anna's Archive | Direct download | Ebooks (EPUB, PDF, MOBI) |
-| Anna's Archive (manga) | Direct download | Manga volumes |
-| Prowlarr (ebooks) | Torrent | Ebooks via configured indexers |
-| Prowlarr (audiobooks) | Torrent | Audiobooks via configured indexers |
-| Prowlarr (manga) | Torrent | Manga via configured indexers |
-| AudioBookBay | Torrent | Audiobooks |
-| Project Gutenberg | Direct download | Public domain ebooks |
-| Open Library | Direct download | Borrowable ebooks |
-| Standard Ebooks | Direct download | Free, high-quality ebooks |
-| Librivox | Direct download | Free public domain audiobooks |
-| MangaDex | Direct download | Manga chapters |
-| Nyaa | Torrent | Manga, light novels |
-| Web Novels (7 sites) | Scraping (lncrawl) | Web novels compiled to EPUB |
-| Flibusta | Direct download | Russian-language ebooks (OPDS) |
-| Z-Library | Direct download | Ebooks (requires account, daily limit) |
-| ThePirateBay | Torrent | Ebooks, audiobooks (via apibay.org) |
-| BookTracker | Torrent | Russian books and audiobooks (requires account) |
+Librarr ships with **driver implementations** -- the protocols it can speak. The list of active indexers, their endpoints, mirrors, and enabled flags lives in a JSON registry loaded at runtime. The default registry is hosted at [`librarr-sources`](https://github.com/JeremiahM37/librarr-sources); override with `LIBRARR_SOURCES_URL` or `LIBRARR_SOURCES_PATH`.
+
+| Driver | Used for |
+|--------|----------|
+| Torznab / Newznab | Prowlarr-managed indexers (any Torznab-compatible source) |
+| OPDS 1.2 catalogs | Library, archive, and OPDS-acquisition feeds |
+| Public JSON / RSS APIs | Open metadata APIs, public RSS feeds |
+| Direct-download with MD5/key lookup | Archive sites that key downloads by content hash |
+| Authenticated forum / tracker | Private trackers (user supplies credentials) |
+| Library-card-style API | Account-gated catalogs (user supplies endpoint + credentials) |
+| Web-novel crawler (`lncrawl`) | Web-novel sites with chapter pagination |
+| HTML scrape with regex extractor | Sites without a structured API |
+
+To add or remove a specific indexer endpoint, edit the registry -- no code changes required.
 
 ## Quick Start
 
@@ -266,11 +261,20 @@ All configuration is via environment variables. Every variable has a sensible de
 | `INCOMING_DIR` | `/data/incoming` | Incoming file staging directory |
 | `MANGA_INCOMING_DIR` | `/data/manga-incoming` | Manga incoming staging directory |
 
+### Sources Registry
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LIBRARR_SOURCES_URL` | | URL of a JSON sources registry; fetched at startup, falls back to embedded default if unreachable |
+| `LIBRARR_SOURCES_PATH` | | Local path to a sources registry JSON file; takes precedence over URL |
+| `LIBRARR_SOURCES_REFRESH_MIN` | `0` | If > 0, re-fetch the URL registry every N minutes |
+
+Legacy per-source env vars (`ANNAS_ARCHIVE_DOMAIN`, `PROWLARR_URL`, etc.) continue to be honored and override values loaded from the registry.
+
 ### Search / Downloads
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `ANNAS_ARCHIVE_DOMAIN` | `annas-archive.gl` | Anna's Archive domain (changes periodically) |
 | `MIN_TORRENT_SIZE_BYTES` | `10000` | Minimum torrent size filter (10 KB) |
 | `MAX_TORRENT_SIZE_BYTES` | `2000000000` | Maximum torrent size filter (2 GB) |
 | `MAX_RETRIES` | `2` | Download retry attempts |
@@ -602,4 +606,4 @@ MIT
 
 ## Disclaimer
 
-This software is provided for **educational and personal use only**. Users are responsible for ensuring their use complies with all applicable laws and regulations in their jurisdiction. The developers do not condone or encourage copyright infringement or any illegal activity. This tool does not host, store, or distribute any copyrighted content.
+This software is provided for **educational and personal use only**. Users are responsible for ensuring their use complies with all applicable laws and regulations in their jurisdiction. The developers do not condone or encourage copyright infringement or any illegal activity. This tool does not host, store, or distribute any copyrighted content, and ships with no built-in catalog of indexers -- the list of endpoints to query comes from a user-supplied registry. Requests to add or remove specific indexer endpoints belong on the [librarr-sources](https://github.com/JeremiahM37/librarr-sources) repository.

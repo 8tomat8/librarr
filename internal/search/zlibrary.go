@@ -54,12 +54,14 @@ func (z *ZLibrary) Enabled() bool        { return z.cfg.ZLibraryEnabled && z.cfg
 func (z *ZLibrary) SearchTab() string    { return "main" }
 func (z *ZLibrary) DownloadType() string { return "direct" }
 
-// apiBase returns the Z-Library API base URL.
+// apiBase returns the API base URL — user-supplied ZLibraryURL takes
+// precedence; otherwise we fall back to the value in the runtime sources
+// registry.
 func (z *ZLibrary) apiBase() string {
 	if z.cfg.ZLibraryURL != "" {
 		return strings.TrimRight(z.cfg.ZLibraryURL, "/")
 	}
-	return "https://z-lib.org"
+	return strings.TrimRight(z.cfg.Sources.ZLibraryDefault, "/")
 }
 
 // --- Z-Library API response types ---

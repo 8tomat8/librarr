@@ -10,9 +10,8 @@ import (
 	"github.com/JeremiahM37/librarr/internal/models"
 )
 
-const mangadexAPI = "https://api.mangadex.org"
-
-// MangaDex searches MangaDex for manga via their public API.
+// MangaDex searches a MangaDex-compatible API for manga. API, uploads, and
+// web URLs come from the runtime sources registry.
 type MangaDex struct {
 	cfg    *config.Config
 	client *http.Client
@@ -51,7 +50,7 @@ type mangadexRelationship struct {
 }
 
 func (m *MangaDex) Search(ctx context.Context, query string) ([]models.SearchResult, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", mangadexAPI+"/manga", nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", m.cfg.Sources.MangaDex.APIURL+"/manga", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +109,7 @@ func (m *MangaDex) Search(ctx context.Context, query string) ([]models.SearchRes
 		for _, rel := range item.Relationships {
 			if rel.Type == "cover_art" && rel.Attributes != nil {
 				if fname, ok := rel.Attributes["fileName"].(string); ok && fname != "" {
-					coverURL = fmt.Sprintf("https://uploads.mangadex.org/covers/%s/%s.256.jpg", item.ID, fname)
+					coverURL = fmt.Sprintf("%s/covers/%s/%s.256.jpg", m.cfg.Sources.MangaDex.UploadsURL, item.ID, fname)
 				}
 				break
 			}
@@ -134,7 +133,7 @@ func (m *MangaDex) Search(ctx context.Context, query string) ([]models.SearchRes
 			CoverURL:  coverURL,
 			SizeHuman: sizeHuman,
 			MediaType: "manga",
-			URL:       fmt.Sprintf("https://mangadex.org/title/%s", item.ID),
+			URL:       fmt.Sprintf("%s/title/%s", m.cfg.Sources.MangaDex.WebURL, item.ID),
 		})
 	}
 

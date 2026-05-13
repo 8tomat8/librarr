@@ -11,9 +11,8 @@ import (
 	"github.com/JeremiahM37/librarr/internal/models"
 )
 
-const gutendexURL = "https://gutendex.com/books"
-
-// Gutenberg searches Project Gutenberg via the Gutendex API.
+// Gutenberg searches a Gutendex-compatible public-domain ebook catalog.
+// Endpoint comes from the runtime sources registry.
 type Gutenberg struct {
 	cfg    *config.Config
 	client *http.Client
@@ -31,7 +30,7 @@ func (g *Gutenberg) SearchTab() string    { return "main" }
 func (g *Gutenberg) DownloadType() string { return "direct" }
 
 func (g *Gutenberg) Search(ctx context.Context, query string) ([]models.SearchResult, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", gutendexURL, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", g.cfg.Sources.Gutenberg.URL, nil)
 	if err != nil {
 		return nil, err
 	}

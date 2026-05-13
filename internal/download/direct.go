@@ -28,15 +28,10 @@ func NewDirectDownloader(cfg *config.Config, client *http.Client) *DirectDownloa
 
 var getLinkRe = regexp.MustCompile(`href="(get\.php\?md5=[^"]+)"`)
 
-// libgenMirrors are alternative libgen front-ends that implement the
-// ads.php → get.php download flow. Tried in order when one fails.
-// (Other libgen domains like .is / .rs use a different URL scheme.)
-var libgenMirrors = []string{
-	"https://libgen.li",
-	"https://libgen.la",
-	"https://libgen.bz",
-	"https://libgen.gl",
-	"https://libgen.vg",
+// mirrors returns the list of libgen-style ads.php/get.php mirrors to try, in
+// order. Sourced from the runtime registry (cfg.Sources.LibgenMirrors).
+func (d *DirectDownloader) mirrors() []string {
+	return d.cfg.Sources.LibgenMirrors
 }
 
 // DownloadFromAnnas downloads a file from Anna's Archive via libgen.
@@ -78,7 +73,7 @@ func (d *DirectDownloader) DownloadFromAnnas(md5, title string, progressFn func(
 // have the book while others don't.
 func (d *DirectDownloader) fetchLibgenDownloadURL(md5 string, progressFn func(string)) (string, error) {
 	var lastErr error
-	for i, mirror := range libgenMirrors {
+	for i, mirror := range d.mirrors() {
 		if i > 0 && progressFn != nil {
 			progressFn(fmt.Sprintf("Trying mirror: %s", mirror))
 		}
@@ -296,7 +291,15 @@ func (d *DirectDownloader) tryAltMD5(title, originalMD5 string, progressFn func(
 			progressFn(fmt.Sprintf("Trying alt mirror %d/3...", tried))
 		}
 
-		adsURL := fmt.Sprintf("https://libgen.li/ads.php?md5=%s", r.MD5)
+		// Use the first configured mirror as the primary alt-MD5 lookup.
+		primary := ""
+		if mm := d.mirrors(); len(mm) > 0 {
+			primary = mm[0]
+		}
+		if primary == "" {
+			continue
+		}
+		adsURL := fmt.Sprintf("%s/ads.php?md5=%s", primary, r.MD5)
 		req, err := http.NewRequest("GET", adsURL, nil)
 		if err != nil {
 			continue
@@ -316,7 +319,7 @@ func (d *DirectDownloader) tryAltMD5(title, originalMD5 string, progressFn func(
 
 		match := getLinkRe.FindSubmatch(body)
 		if len(match) >= 2 {
-			downloadURL := fmt.Sprintf("https://libgen.li/%s", string(match[1]))
+			downloadURL := fmt.Sprintf("%s/%s", primary, string(match[1]))
 			slog.Info("found alt libgen download link", "title", title, "alt_md5", r.MD5)
 			return downloadURL, nil
 		}

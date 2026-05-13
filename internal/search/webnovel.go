@@ -130,7 +130,11 @@ func (w *WebNovel) doGet(ctx context.Context, urlStr string, headers map[string]
 
 func (w *WebNovel) searchFreeWebNovel(ctx context.Context, query string) []webNovelResult {
 	var results []webNovelResult
-	req, err := http.NewRequestWithContext(ctx, "GET", "https://freewebnovel.com/search/", nil)
+	site := w.cfg.Sources.WebNovel("freewebnovel")
+	if site == nil {
+		return results
+	}
+	req, err := http.NewRequestWithContext(ctx, "GET", site.URL, nil)
 	if err != nil {
 		return results
 	}
@@ -170,12 +174,19 @@ var wnNovelListRe = regexp.MustCompile(`<a\s+href="([^"]+)"[^>]*class="list-grou
 var wnBoxNovelRe = regexp.MustCompile(`<div class="post-title">\s*<h3[^>]*>\s*<a\s+href="([^"]+)"[^>]*>([^<]+)</a>`)
 
 func (w *WebNovel) searchAllNovelFull(ctx context.Context, query string) []webNovelResult {
-	return w.searchRegexSite(ctx, "https://allnovelfull.net/search", "keyword", query,
-		"https://allnovelfull.net", "AllNovelFull", wnNovelTitleRe)
+	site := w.cfg.Sources.WebNovel("allnovelfull")
+	if site == nil {
+		return nil
+	}
+	return w.searchRegexSite(ctx, site.URL, "keyword", query, site.BaseURL, site.Label, wnNovelTitleRe)
 }
 
 func (w *WebNovel) searchBoxNovel(ctx context.Context, query string) []webNovelResult {
-	req, err := http.NewRequestWithContext(ctx, "GET", "https://boxnovel.com/", nil)
+	site := w.cfg.Sources.WebNovel("boxnovel")
+	if site == nil {
+		return nil
+	}
+	req, err := http.NewRequestWithContext(ctx, "GET", site.URL, nil)
 	if err != nil {
 		return nil
 	}
@@ -196,15 +207,21 @@ func (w *WebNovel) searchBoxNovel(ctx context.Context, query string) []webNovelR
 }
 
 func (w *WebNovel) searchNovelBin(ctx context.Context, query string) []webNovelResult {
-	resp, err := w.doGet(ctx, fmt.Sprintf("https://novelbin.me/search?keyword=%s", query), nil)
+	site := w.cfg.Sources.WebNovel("novelbin")
+	if site == nil {
+		return nil
+	}
+	resp, err := w.doGet(ctx, fmt.Sprintf("%s?keyword=%s", site.URL, query), nil)
 	if err != nil {
 		return nil
 	}
 	defer resp.Body.Close()
 
 	body := wnReadBodyString(resp)
-	re := regexp.MustCompile(`<a\s+href="(https?://novelbin\.me/novel-book/[^"]+)"[^>]*title="([^"]+)"`)
-	results := wnExtractRegexResults(body, re, "", "NovelBin")
+	// Match links to novel-book pages on the configured base host.
+	escapedBase := regexp.QuoteMeta(strings.TrimSuffix(site.BaseURL, "/"))
+	re := regexp.MustCompile(`<a\s+href="(` + escapedBase + `/novel-book/[^"]+)"[^>]*title="([^"]+)"`)
+	results := wnExtractRegexResults(body, re, "", site.Label)
 
 	var filtered []webNovelResult
 	seen := make(map[string]bool)
@@ -222,12 +239,19 @@ func (w *WebNovel) searchNovelBin(ctx context.Context, query string) []webNovelR
 }
 
 func (w *WebNovel) searchNovelFull(ctx context.Context, query string) []webNovelResult {
-	return w.searchAjaxSite(ctx, "https://novelfull.com/ajax/search-novel", query,
-		"https://novelfull.com", "NovelFull")
+	site := w.cfg.Sources.WebNovel("novelfull")
+	if site == nil {
+		return nil
+	}
+	return w.searchAjaxSite(ctx, site.URL, query, site.BaseURL, site.Label)
 }
 
 func (w *WebNovel) searchLightNovelPub(ctx context.Context, query string) []webNovelResult {
-	resp, err := w.doGet(ctx, fmt.Sprintf("https://www.lightnovelpub.com/lnwsearchlive?inputContent=%s", query),
+	site := w.cfg.Sources.WebNovel("lightnovelpub")
+	if site == nil {
+		return nil
+	}
+	resp, err := w.doGet(ctx, fmt.Sprintf("%s?inputContent=%s", site.URL, query),
 		map[string]string{"X-Requested-With": "XMLHttpRequest"})
 	if err != nil {
 		return nil
@@ -257,12 +281,12 @@ func (w *WebNovel) searchLightNovelPub(ctx context.Context, query string) []webN
 			}
 			url := item.NovelNameHref
 			if !strings.HasPrefix(url, "http") {
-				url = "https://www.lightnovelpub.com" + url
+				url = site.BaseURL + url
 			}
 			results = append(results, webNovelResult{
 				Title: strings.TrimSpace(item.NovelName),
 				URL:   url,
-				Site:  "LightNovelPub",
+				Site:  site.Label,
 			})
 		}
 		return results
@@ -270,12 +294,15 @@ func (w *WebNovel) searchLightNovelPub(ctx context.Context, query string) []webN
 
 	// Fallback to HTML regex.
 	re := regexp.MustCompile(`<a\s+href="(/novel/[^"]+)"[^>]*>([^<]+)</a>`)
-	return wnExtractRegexResults(body, re, "https://www.lightnovelpub.com", "LightNovelPub")
+	return wnExtractRegexResults(body, re, site.BaseURL, site.Label)
 }
 
 func (w *WebNovel) searchReadNovelFull(ctx context.Context, query string) []webNovelResult {
-	return w.searchAjaxSite(ctx, "https://readnovelfull.com/ajax/search-novel", query,
-		"https://readnovelfull.com", "ReadNovelFull")
+	site := w.cfg.Sources.WebNovel("readnovelfull")
+	if site == nil {
+		return nil
+	}
+	return w.searchAjaxSite(ctx, site.URL, query, site.BaseURL, site.Label)
 }
 
 func (w *WebNovel) searchRegexSite(ctx context.Context, baseURL, paramName, query, baseHost, site string, re *regexp.Regexp) []webNovelResult {

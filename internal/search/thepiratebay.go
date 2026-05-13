@@ -15,14 +15,10 @@ import (
 	"github.com/JeremiahM37/librarr/internal/models"
 )
 
-// tpbAPIBase is the apibay.org production endpoint. It is a var rather than
-// a const so tests can redirect to an httptest server.
-var tpbAPIBase = "https://apibay.org"
-
-// tpbTrackers are the trackers TPB itself announces on its site, appended to
-// magnet URLs so qBittorrent can find peers. Magnets built from info_hash
-// alone have no trackers and will never resolve.
-var tpbTrackers = []string{
+// tpbDefaultTrackers are the trackers appended to magnet URLs so qBittorrent
+// can find peers (info_hash alone has no trackers). Used when the runtime
+// registry has no override.
+var tpbDefaultTrackers = []string{
 	"udp://tracker.opentrackr.org:1337/announce",
 	"udp://tracker.openbittorrent.com:6969/announce",
 	"udp://tracker.torrent.eu.org:451/announce",
@@ -36,7 +32,7 @@ var tpbTrackers = []string{
 func buildMagnet(infoHash, displayName string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "magnet:?xt=urn:btih:%s&dn=%s", infoHash, url.QueryEscape(displayName))
-	for _, tr := range tpbTrackers {
+	for _, tr := range tpbDefaultTrackers {
 		b.WriteString("&tr=")
 		b.WriteString(url.QueryEscape(tr))
 	}
@@ -54,6 +50,11 @@ type ThePirateBay struct {
 // NewThePirateBay creates a new ThePirateBay searcher for the given tab.
 func NewThePirateBay(cfg *config.Config, client *http.Client, tab string) *ThePirateBay {
 	return &ThePirateBay{cfg: cfg, client: client, tab: tab}
+}
+
+// apiBase returns the runtime-configured API endpoint for this driver.
+func (t *ThePirateBay) apiBase() string {
+	return t.cfg.Sources.ThePirateBay.URL
 }
 
 func (t *ThePirateBay) Name() string {
@@ -112,7 +113,7 @@ func (t *ThePirateBay) Search(ctx context.Context, query string) ([]models.Searc
 }
 
 func (t *ThePirateBay) searchCategory(ctx context.Context, query, category string) ([]models.SearchResult, error) {
-	u, err := url.Parse(tpbAPIBase + "/q.php")
+	u, err := url.Parse(t.apiBase() + "/q.php")
 	if err != nil {
 		return nil, fmt.Errorf("parse TPB URL: %w", err)
 	}

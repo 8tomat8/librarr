@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "annas": {
+    "domain": "annas-archive.gl"
+  },
+  "audiobookbay": {
+    "mirrors": [
+      "audiobookbay.lu",
+      "audiobookbay.li",
+      "audiobookbay.se"
+    ],
+    "trackers": [
+      "udp://tracker.opentrackr.org:1337/announce",
+      "udp://open.stealth.si:80/announce",
+      "udp://exodus.desync.com:6969/announce",
+      "udp://tracker.torrent.eu.org:451/announce",
+      "udp://tracker.tiny-vps.com:6969/announce",
+      "udp://tracker.dler.org:6969/announce",
+      "http://tracker.files.fm:6969/announce"
+    ]
+  },
+  "thepiratebay": {
+    "url": "https://apibay.org"
+  },
+  "gutenberg": {
+    "url": "https://gutendex.com/books"
+  },
+  "openlibrary": {
+    "search_url": "https://openlibrary.org/search.json",
+    "cover_url": "https://covers.openlibrary.org"
+  },
+  "librivox": {
+    "url": "https://librivox.org/api/feed/audiobooks"
+  },
+  "standardebooks": {
+    "url": "https://standardebooks.org"
+  },
+  "mangadex": {
+    "api_url": "https://api.mangadex.org",
+    "uploads_url": "https://uploads.mangadex.org",
+    "web_url": "https://mangadex.org"
+  },
+  "nyaa": {
+    "url": "https://nyaa.si/"
+  },
+  "webnovels": [
+    {"id": "freewebnovel",  "label": "FreeWebNovel",  "url": "https://freewebnovel.com/search/"},
+    {"id": "allnovelfull",  "label": "AllNovelFull",  "url": "https://allnovelfull.net/search",       "base_url": "https://allnovelfull.net"},
+    {"id": "boxnovel",      "label": "BoxNovel",      "url": "https://boxnovel.com/"},
+    {"id": "novelbin",      "label": "NovelBin",      "url": "https://novelbin.me/search",            "base_url": "https://novelbin.me"},
+    {"id": "novelfull",     "label": "NovelFull",     "url": "https://novelfull.com/ajax/search-novel", "base_url": "https://novelfull.com"},
+    {"id": "lightnovelpub", "label": "LightNovelPub", "url": "https://www.lightnovelpub.com/lnwsearchlive", "base_url": "https://www.lightnovelpub.com"},
+    {"id": "readnovelfull", "label": "ReadNovelFull", "url": "https://readnovelfull.com/ajax/search-novel", "base_url": "https://readnovelfull.com"}
+  ],
+  "libgen_mirrors": [
+    "https://libgen.li",
+    "https://libgen.la",
+    "https://libgen.bz",
+    "https://libgen.gl",
+    "https://libgen.vg"
+  ],
+  "zlibrary_default": "https://z-lib.org"
+}
