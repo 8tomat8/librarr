@@ -15,13 +15,6 @@ import (
 	"github.com/JeremiahM37/librarr/internal/sources"
 )
 
-// sourcesDefault is a package-local helper that returns the embedded fallback
-// registry. Used by exported APIs (like ResolveABBMagnet) that don't carry a
-// Config.
-func sourcesDefault() (*sources.Registry, error) {
-	return sources.Default()
-}
-
 // AudioBookBay searches an AudioBookBay-style scrape source for audiobook torrents.
 // Mirrors and trackers are loaded from the runtime sources registry.
 type AudioBookBay struct {
@@ -139,8 +132,7 @@ func (a *AudioBookBay) searchDomain(ctx context.Context, domain, query string) (
 // registry — pass nil/empty to use embedded defaults.
 func ResolveABBMagnet(ctx context.Context, client *http.Client, userAgent, abbPath string, mirrors, fallbackTrackers []string) (string, error) {
 	if len(mirrors) == 0 || len(fallbackTrackers) == 0 {
-		def, err := sourcesDefault()
-		if err == nil {
+		if def, err := sources.Default(); err == nil {
 			if len(mirrors) == 0 {
 				mirrors = def.AudioBookBay.Mirrors
 			}
