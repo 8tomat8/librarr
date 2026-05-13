@@ -27,24 +27,45 @@ var sensitiveKeys = map[string]bool{
 func (s *Server) handleGetSettings(w http.ResponseWriter, _ *http.Request) {
 	settings := s.loadSettings()
 
-	// Inject current config values as defaults.
+	// Inject current config values as defaults so the UI can render fields
+	// even when nothing has been saved to settings.json yet.
 	defaults := map[string]interface{}{
-		"file_org_enabled":    s.cfg.FileOrgEnabled,
-		"annas_archive_domain": s.cfg.AnnasArchiveDomain,
-		"ebook_dir":           s.cfg.EbookDir,
-		"audiobook_dir":       s.cfg.AudiobookDir,
-		"manga_dir":           s.cfg.MangaDir,
-		"incoming_dir":        s.cfg.IncomingDir,
-		"rate_limit_enabled":  s.cfg.RateLimitEnabled,
-		"metrics_enabled":     s.cfg.MetricsEnabled,
-		"webnovel_enabled":    s.cfg.WebNovelEnabled,
-		"mangadex_enabled":    s.cfg.MangaDexEnabled,
-		"max_retries":         s.cfg.MaxRetries,
-		"foreign_lang_filter": s.searchMgr.ForeignLangFilterEnabled(),
-		"flibusta_enabled":    s.cfg.FlibustaEnabled,
-		"flibusta_url":        s.cfg.FlibustaURL,
-		"zlibrary_enabled":    s.cfg.ZLibraryEnabled,
+		"file_org_enabled":            s.cfg.FileOrgEnabled,
+		"annas_archive_domain":        s.cfg.AnnasArchiveDomain,
+		"ebook_dir":                   s.cfg.EbookDir,
+		"audiobook_dir":               s.cfg.AudiobookDir,
+		"manga_dir":                   s.cfg.MangaDir,
+		"incoming_dir":                s.cfg.IncomingDir,
+		"rate_limit_enabled":          s.cfg.RateLimitEnabled,
+		"metrics_enabled":             s.cfg.MetricsEnabled,
+		"webnovel_enabled":            s.cfg.WebNovelEnabled,
+		"mangadex_enabled":            s.cfg.MangaDexEnabled,
+		"max_retries":                 s.cfg.MaxRetries,
+		"foreign_lang_filter":         s.searchMgr.ForeignLangFilterEnabled(),
+		"flibusta_enabled":            s.cfg.FlibustaEnabled,
+		"flibusta_url":                s.cfg.FlibustaURL,
+		"zlibrary_enabled":            s.cfg.ZLibraryEnabled,
 		"remove_torrent_after_import": s.cfg.RemoveTorrentAfterImport,
+
+		// Integration URLs and credentials (sensitive ones are masked below).
+		"qb_url":                    s.cfg.QBUrl,
+		"qb_user":                   s.cfg.QBUser,
+		"qb_pass":                   s.cfg.QBPass,
+		"prowlarr_url":              s.cfg.ProwlarrURL,
+		"prowlarr_api_key":          s.cfg.ProwlarrAPIKey,
+		"sabnzbd_url":               s.cfg.SABnzbdURL,
+		"sabnzbd_api_key":           s.cfg.SABnzbdAPIKey,
+		"sabnzbd_category":          s.cfg.SABnzbdCategory,
+		"abs_url":                   s.cfg.ABSURL,
+		"abs_token":                 s.cfg.ABSToken,
+		"kavita_url":                s.cfg.KavitaURL,
+		"kavita_user":               s.cfg.KavitaUser,
+		"kavita_pass":               s.cfg.KavitaPass,
+		"komga_url":                 s.cfg.KomgaURL,
+		"komga_user":                s.cfg.KomgaUser,
+		"komga_pass":                s.cfg.KomgaPass,
+		"calibre_url":               s.cfg.CalibreURL,
+		"calibre_library_path":      s.cfg.CalibreLibraryPath,
 	}
 
 	// Merge defaults under settings (settings override).

@@ -469,6 +469,161 @@ tailwind.config = {
         </div>
       </div>
 
+      <!-- Integrations -->
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 mb-6">
+        <div class="flex items-start justify-between mb-4 gap-3">
+          <div>
+            <h3 class="text-sm font-semibold text-slate-300 uppercase tracking-wider">Integrations</h3>
+            <p class="text-xs text-slate-500 mt-1">Edit URLs and credentials without restarting the container. Saved values override the env vars in your compose file on next restart.</p>
+          </div>
+        </div>
+        <div class="space-y-4">
+
+          <!-- Prowlarr -->
+          <div class="bg-slate-800/40 rounded-lg p-4">
+            <div class="flex items-center justify-between mb-3">
+              <h4 class="text-sm font-medium text-slate-200">Prowlarr</h4>
+              <button onclick="saveIntegration('prowlarr')" class="px-3 py-1.5 text-xs bg-indigo-600 hover:bg-indigo-500 text-white rounded-md transition-colors">Save</button>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">URL</label>
+                <input type="text" id="setting-prowlarr_url" class="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200 placeholder-slate-600" placeholder="http://prowlarr:9696">
+              </div>
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">API Key</label>
+                <input type="password" id="setting-prowlarr_api_key" class="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200 placeholder-slate-600" placeholder="">
+              </div>
+            </div>
+          </div>
+
+          <!-- qBittorrent -->
+          <div class="bg-slate-800/40 rounded-lg p-4">
+            <div class="flex items-center justify-between mb-3">
+              <h4 class="text-sm font-medium text-slate-200">qBittorrent</h4>
+              <button onclick="saveIntegration('qbittorrent')" class="px-3 py-1.5 text-xs bg-indigo-600 hover:bg-indigo-500 text-white rounded-md transition-colors">Save</button>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">URL</label>
+                <input type="text" id="setting-qb_url" class="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200 placeholder-slate-600" placeholder="http://qbittorrent:8080">
+              </div>
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">Username</label>
+                <input type="text" id="setting-qb_user" class="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200 placeholder-slate-600" placeholder="admin">
+              </div>
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">Password</label>
+                <input type="password" id="setting-qb_pass" class="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200 placeholder-slate-600" placeholder="">
+              </div>
+            </div>
+          </div>
+
+          <!-- SABnzbd -->
+          <div class="bg-slate-800/40 rounded-lg p-4">
+            <div class="flex items-center justify-between mb-3">
+              <h4 class="text-sm font-medium text-slate-200">SABnzbd</h4>
+              <button onclick="saveIntegration('sabnzbd')" class="px-3 py-1.5 text-xs bg-indigo-600 hover:bg-indigo-500 text-white rounded-md transition-colors">Save</button>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">URL</label>
+                <input type="text" id="setting-sabnzbd_url" class="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200 placeholder-slate-600" placeholder="http://sabnzbd:8080">
+              </div>
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">API Key</label>
+                <input type="password" id="setting-sabnzbd_api_key" class="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200 placeholder-slate-600" placeholder="">
+              </div>
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">Category</label>
+                <input type="text" id="setting-sabnzbd_category" class="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200 placeholder-slate-600" placeholder="librarr">
+              </div>
+            </div>
+          </div>
+
+          <!-- Audiobookshelf -->
+          <div class="bg-slate-800/40 rounded-lg p-4">
+            <div class="flex items-center justify-between mb-3">
+              <h4 class="text-sm font-medium text-slate-200">Audiobookshelf</h4>
+              <button onclick="saveIntegration('audiobookshelf')" class="px-3 py-1.5 text-xs bg-indigo-600 hover:bg-indigo-500 text-white rounded-md transition-colors">Save</button>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">URL</label>
+                <input type="text" id="setting-abs_url" class="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200 placeholder-slate-600" placeholder="http://audiobookshelf:13378">
+              </div>
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">API Token</label>
+                <input type="password" id="setting-abs_token" class="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200 placeholder-slate-600" placeholder="">
+              </div>
+            </div>
+          </div>
+
+          <!-- Kavita -->
+          <div class="bg-slate-800/40 rounded-lg p-4">
+            <div class="flex items-center justify-between mb-3">
+              <h4 class="text-sm font-medium text-slate-200">Kavita</h4>
+              <button onclick="saveIntegration('kavita')" class="px-3 py-1.5 text-xs bg-indigo-600 hover:bg-indigo-500 text-white rounded-md transition-colors">Save</button>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">URL</label>
+                <input type="text" id="setting-kavita_url" class="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200 placeholder-slate-600" placeholder="http://kavita:5000">
+              </div>
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">Username</label>
+                <input type="text" id="setting-kavita_user" class="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200 placeholder-slate-600" placeholder="">
+              </div>
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">Password</label>
+                <input type="password" id="setting-kavita_pass" class="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200 placeholder-slate-600" placeholder="">
+              </div>
+            </div>
+          </div>
+
+          <!-- Komga -->
+          <div class="bg-slate-800/40 rounded-lg p-4">
+            <div class="flex items-center justify-between mb-3">
+              <h4 class="text-sm font-medium text-slate-200">Komga</h4>
+              <button onclick="saveIntegration('komga')" class="px-3 py-1.5 text-xs bg-indigo-600 hover:bg-indigo-500 text-white rounded-md transition-colors">Save</button>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">URL</label>
+                <input type="text" id="setting-komga_url" class="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200 placeholder-slate-600" placeholder="http://komga:25600">
+              </div>
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">Username</label>
+                <input type="text" id="setting-komga_user" class="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200 placeholder-slate-600" placeholder="">
+              </div>
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">Password</label>
+                <input type="password" id="setting-komga_pass" class="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200 placeholder-slate-600" placeholder="">
+              </div>
+            </div>
+          </div>
+
+          <!-- Calibre -->
+          <div class="bg-slate-800/40 rounded-lg p-4">
+            <div class="flex items-center justify-between mb-3">
+              <h4 class="text-sm font-medium text-slate-200">Calibre</h4>
+              <button onclick="saveIntegration('calibre')" class="px-3 py-1.5 text-xs bg-indigo-600 hover:bg-indigo-500 text-white rounded-md transition-colors">Save</button>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">URL</label>
+                <input type="text" id="setting-calibre_url" class="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200 placeholder-slate-600" placeholder="http://calibre-web:8083">
+              </div>
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">Library Path</label>
+                <input type="text" id="setting-calibre_library_path" class="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200 placeholder-slate-600" placeholder="/calibre">
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
       <!-- Connection Tests -->
       <div class="bg-slate-900 border border-slate-800 rounded-xl p-5 mb-6">
         <h3 class="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-4" data-i18n="s_connection_tests">Connection Tests</h3>
@@ -2107,6 +2262,18 @@ async function loadSettings() {
   }
 }
 
+// Settings keys backed by an input in the Integrations section, grouped by the
+// integration name passed to saveIntegration().
+const INTEGRATION_FIELDS = {
+  prowlarr:       ['prowlarr_url', 'prowlarr_api_key'],
+  qbittorrent:    ['qb_url', 'qb_user', 'qb_pass'],
+  sabnzbd:        ['sabnzbd_url', 'sabnzbd_api_key', 'sabnzbd_category'],
+  audiobookshelf: ['abs_url', 'abs_token'],
+  kavita:         ['kavita_url', 'kavita_user', 'kavita_pass'],
+  komga:          ['komga_url', 'komga_user', 'komga_pass'],
+  calibre:        ['calibre_url', 'calibre_library_path'],
+};
+
 async function loadSettingToggles() {
   try {
     const data = await apiJson('/api/settings');
@@ -2118,7 +2285,44 @@ async function loadSettingToggles() {
     if (langFilter && data.foreign_lang_filter !== undefined) {
       langFilter.checked = data.foreign_lang_filter;
     }
+    // Populate integration inputs. Sensitive values come back as "--------"
+    // from the server; the save handler drops that sentinel before writing.
+    for (const fields of Object.values(INTEGRATION_FIELDS)) {
+      for (const key of fields) {
+        const el = document.getElementById(`setting-${key}`);
+        if (el && data[key] !== undefined && data[key] !== null) {
+          el.value = data[key];
+        }
+      }
+    }
   } catch (err) {}
+}
+
+async function saveIntegration(name) {
+  const fields = INTEGRATION_FIELDS[name];
+  if (!fields) return;
+  const payload = {};
+  for (const key of fields) {
+    const el = document.getElementById(`setting-${key}`);
+    if (!el) continue;
+    payload[key] = el.value;
+  }
+  try {
+    const res = await apiJson('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (res.success) {
+      showToast('Saved. Restart the container for new URLs/credentials to take effect.', 'success');
+    } else {
+      showToast(res.error || 'Failed to save', 'error');
+    }
+  } catch (err) {
+    if (err.message !== 'Unauthorized') {
+      showToast('Failed to save', 'error');
+    }
+  }
 }
 
 async function loadConfig() {
