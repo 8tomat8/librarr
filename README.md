@@ -552,6 +552,68 @@ Librarr serves an OPDS 1.2 catalog at `/opds` for e-reader apps (KOReader, Moon+
 
 **Setup:** Add `http://your-librarr-host:5050/opds` as an OPDS catalog in your e-reader. If auth is enabled, enter your Librarr username and password.
 
+## Using Librarr with Claude / MCP
+
+Librarr's REST API is the integration surface, so any [Model Context Protocol](https://modelcontextprotocol.io/) server can expose Librarr's search, download, and library tools to an LLM (Claude Desktop, Claude Code, Open WebUI, Cursor, etc.). There's no built-in MCP server in Librarr — you wire it into the MCP server you already run.
+
+**Auth:** every endpoint accepts an `X-Api-Key` header or `?apikey=` query param. Set `API_KEY` in your `docker-compose.yml` and reuse it from your MCP server.
+
+**Minimal Python example** using [`fastmcp`](https://github.com/jlowin/fastmcp):
+
+```python
+# librarr_mcp.py — run as: fastmcp run librarr_mcp.py
+import os, httpx
+from fastmcp import FastMCP
+
+LIBRARR = os.environ["LIBRARR_URL"]       # e.g. http://librarr.lan:5050
+API_KEY = os.environ["LIBRARR_API_KEY"]
+HEADERS = {"X-Api-Key": API_KEY}
+
+mcp = FastMCP("librarr")
+
+@mcp.tool()
+async def search_books(query: str) -> list[dict]:
+    """Search for an ebook across all configured sources."""
+    async with httpx.AsyncClient() as c:
+        r = await c.get(f"{LIBRARR}/api/search", params={"q": query}, headers=HEADERS)
+        return r.json()
+
+@mcp.tool()
+async def download_book(result: dict) -> dict:
+    """Queue an ebook download. Pass a result object returned by search_books — it
+    already contains `source`, `title`, and the source-specific URL field
+    (`download_url` / `magnet_url` / `md5` / etc.)."""
+    async with httpx.AsyncClient() as c:
+        r = await c.post(f"{LIBRARR}/api/download", json=result, headers=HEADERS)
+        return r.json()
+
+@mcp.tool()
+async def list_downloads() -> list[dict]:
+    """List active and recent download jobs with status."""
+    async with httpx.AsyncClient() as c:
+        r = await c.get(f"{LIBRARR}/api/downloads", headers=HEADERS)
+        return r.json()
+```
+
+**Register with Claude Desktop / Claude Code** (`~/.claude.json` or `claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "librarr": {
+      "command": "fastmcp",
+      "args": ["run", "/path/to/librarr_mcp.py"],
+      "env": {
+        "LIBRARR_URL": "http://librarr.lan:5050",
+        "LIBRARR_API_KEY": "your-api-key-here"
+      }
+    }
+  }
+}
+```
+
+The same pattern works for audiobooks (`/api/search/audiobooks`, `/api/download/audiobook`) and manga (`/api/search/manga`, `/api/download/torrent`). Wrap whichever subset of the [API Endpoints](#api-endpoints) above is useful to your assistant.
+
 ## Architecture
 
 Single static binary, zero CGO dependencies, pure-Go SQLite via `modernc.org/sqlite`.
