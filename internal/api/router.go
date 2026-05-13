@@ -183,6 +183,11 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /health", s.handleHealth)
 	s.mux.HandleFunc("GET /api/health", s.handleHealth)
 
+	// OpenAPI 3.1 spec — AI agents / tooling can introspect this to
+	// discover endpoints, request shapes, and response shapes without
+	// prior knowledge of the codebase.
+	s.mux.HandleFunc("GET /api/openapi.json", s.handleOpenAPI)
+
 	// Authentication.
 	s.mux.HandleFunc("POST /api/login", handleLogin(s.cfg, s.db, s.sessions))
 	s.mux.HandleFunc("POST /api/login/totp", handleLoginTOTP(s.db, s.sessions))
