@@ -25,7 +25,7 @@ type contextKey string
 const (
 	ctxUserID   contextKey = "userID"
 	ctxUserRole contextKey = "userRole"
-	ctxUsername  contextKey = "username"
+	ctxUsername contextKey = "username"
 )
 
 // SessionData holds session metadata.
@@ -44,9 +44,9 @@ type PendingTOTP struct {
 
 // SessionStore manages session-based authentication with user tracking.
 type SessionStore struct {
-	mu             sync.RWMutex
-	sessions       map[string]*SessionData
-	pendingTOTP    map[string]*PendingTOTP
+	mu          sync.RWMutex
+	sessions    map[string]*SessionData
+	pendingTOTP map[string]*PendingTOTP
 }
 
 // NewSessionStore creates a new session store.
@@ -483,10 +483,10 @@ func handleLoginTOTP(database *db.DB, sessions *SessionStore) http.HandlerFunc {
 				SameSite: http.SameSiteLaxMode,
 			})
 			writeJSON(w, http.StatusOK, map[string]interface{}{
-				"success":       true,
-				"token":         token,
-				"username":      user.Username,
-				"role":          user.Role,
+				"success":          true,
+				"token":            token,
+				"username":         user.Username,
+				"role":             user.Role,
 				"backup_code_used": true,
 			})
 			return

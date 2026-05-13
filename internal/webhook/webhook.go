@@ -26,12 +26,12 @@ const (
 
 // Config represents a webhook endpoint configuration.
 type Config struct {
-	ID       int64  `json:"id"`
-	Name     string `json:"name"`
-	URL      string `json:"url"`
-	Type     string `json:"type"` // "discord" or "generic"
-	Enabled  bool   `json:"enabled"`
-	Events   string `json:"events"` // comma-separated event types, or "*" for all
+	ID      int64  `json:"id"`
+	Name    string `json:"name"`
+	URL     string `json:"url"`
+	Type    string `json:"type"` // "discord" or "generic"
+	Enabled bool   `json:"enabled"`
+	Events  string `json:"events"` // comma-separated event types, or "*" for all
 }
 
 // Payload is the data sent to webhooks.

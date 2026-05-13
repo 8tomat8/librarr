@@ -25,7 +25,7 @@ func NewFlibusta(cfg *config.Config, client *http.Client) *Flibusta {
 	return &Flibusta{cfg: cfg, client: client}
 }
 
-func (f *Flibusta) Name() string        { return "flibusta" }
+func (f *Flibusta) Name() string         { return "flibusta" }
 func (f *Flibusta) Label() string        { return "Flibusta" }
 func (f *Flibusta) Enabled() bool        { return f.cfg.FlibustaEnabled && f.cfg.FlibustaURL != "" }
 func (f *Flibusta) SearchTab() string    { return "main" }
@@ -47,14 +47,14 @@ var (
 
 // formatPriority defines the preferred download format order.
 var formatPriority = map[string]int{
-	"application/epub+zip":             1,
-	"application/epub":                 2,
-	"application/fb2+zip":              3,
-	"application/fb2":                  4,
-	"application/x-mobipocket-ebook":   5,
-	"application/pdf":                  6,
-	"text/html":                        7,
-	"text/plain":                       8,
+	"application/epub+zip":           1,
+	"application/epub":               2,
+	"application/fb2+zip":            3,
+	"application/fb2":                4,
+	"application/x-mobipocket-ebook": 5,
+	"application/pdf":                6,
+	"text/html":                      7,
+	"text/plain":                     8,
 }
 
 func (f *Flibusta) Search(ctx context.Context, query string) ([]models.SearchResult, error) {

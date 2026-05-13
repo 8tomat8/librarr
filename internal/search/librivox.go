@@ -23,7 +23,7 @@ func NewLibrivox(cfg *config.Config, client *http.Client) *Librivox {
 	return &Librivox{cfg: cfg, client: client}
 }
 
-func (l *Librivox) Name() string        { return "librivox" }
+func (l *Librivox) Name() string         { return "librivox" }
 func (l *Librivox) Label() string        { return "Librivox" }
 func (l *Librivox) Enabled() bool        { return true }
 func (l *Librivox) SearchTab() string    { return "audiobook" }
@@ -34,15 +34,15 @@ type librivoxResponse struct {
 }
 
 type librivoxBook struct {
-	ID               string           `json:"id"`
-	Title            string           `json:"title"`
-	Authors          []librivoxAuthor `json:"authors"`
-	TotalTime        string           `json:"totaltime"`
-	NumSections      string           `json:"num_sections"`
-	URLZipFile       string           `json:"url_zip_file"`
-	URLLibrivox      string           `json:"url_librivox"`
-	CoverArtThumb    string           `json:"coverart_thumbnail"`
-	CoverArtJPG      string           `json:"coverart_jpg"`
+	ID            string           `json:"id"`
+	Title         string           `json:"title"`
+	Authors       []librivoxAuthor `json:"authors"`
+	TotalTime     string           `json:"totaltime"`
+	NumSections   string           `json:"num_sections"`
+	URLZipFile    string           `json:"url_zip_file"`
+	URLLibrivox   string           `json:"url_librivox"`
+	CoverArtThumb string           `json:"coverart_thumbnail"`
+	CoverArtJPG   string           `json:"coverart_jpg"`
 }
 
 type librivoxAuthor struct {

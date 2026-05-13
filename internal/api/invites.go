@@ -25,9 +25,9 @@ func (s *Server) handleListInvites(w http.ResponseWriter, _ *http.Request) {
 
 func (s *Server) handleCreateInvite(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Role       string `json:"role"`
-		MaxUses    int    `json:"max_uses"`
-		ExpiresIn  int    `json:"expires_in"` // seconds from now; 0 = no expiry
+		Role      string `json:"role"`
+		MaxUses   int    `json:"max_uses"`
+		ExpiresIn int    `json:"expires_in"` // seconds from now; 0 = no expiry
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
@@ -80,10 +80,10 @@ func (s *Server) handleCreateInvite(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"success": true,
-		"id":      id,
-		"code":    code,
-		"role":    req.Role,
+		"success":  true,
+		"id":       id,
+		"code":     code,
+		"role":     req.Role,
 		"max_uses": req.MaxUses,
 	})
 }

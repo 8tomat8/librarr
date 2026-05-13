@@ -107,7 +107,7 @@ func (rl *RateLimiter) Check(identity, path string) (allowed bool, retryAfter in
 	if len(bucket.timestamps) >= limit {
 		retryAfter = rl.windowSec
 		if len(bucket.timestamps) > 0 {
-			retryAfter = int(time.Duration(rl.windowSec)*time.Second - now.Sub(bucket.timestamps[0])) / int(time.Second)
+			retryAfter = int(time.Duration(rl.windowSec)*time.Second-now.Sub(bucket.timestamps[0])) / int(time.Second)
 			if retryAfter < 1 {
 				retryAfter = 1
 			}

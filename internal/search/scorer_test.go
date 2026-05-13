@@ -130,10 +130,10 @@ func TestScoreResult_SizeAudiobook(t *testing.T) {
 
 func TestScoreResult_ConfidenceLevels(t *testing.T) {
 	tests := []struct {
-		name       string
-		result     models.SearchResult
-		query      string
-		wantConf   string
+		name     string
+		result   models.SearchResult
+		query    string
+		wantConf string
 	}{
 		{
 			name: "high confidence",
@@ -147,7 +147,7 @@ func TestScoreResult_ConfidenceLevels(t *testing.T) {
 		{
 			name: "low confidence - bad title match",
 			result: models.SearchResult{
-				Title: "Something Completely Different",
+				Title:  "Something Completely Different",
 				Source: "torrent", Seeders: 0,
 			},
 			query:    "the great gatsby",

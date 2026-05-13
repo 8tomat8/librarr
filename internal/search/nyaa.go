@@ -25,14 +25,14 @@ func NewNyaaManga(cfg *config.Config, client *http.Client) *NyaaManga {
 	return &NyaaManga{cfg: cfg, client: client}
 }
 
-func (n *NyaaManga) Name() string        { return "nyaa_manga" }
+func (n *NyaaManga) Name() string         { return "nyaa_manga" }
 func (n *NyaaManga) Label() string        { return "Nyaa" }
 func (n *NyaaManga) Enabled() bool        { return true }
 func (n *NyaaManga) SearchTab() string    { return "manga" }
 func (n *NyaaManga) DownloadType() string { return "torrent" }
 
 type nyaaRSSFeed struct {
-	XMLName xml.Name      `xml:"rss"`
+	XMLName xml.Name       `xml:"rss"`
 	Channel nyaaRSSChannel `xml:"channel"`
 }
 

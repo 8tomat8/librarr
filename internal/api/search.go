@@ -98,4 +98,3 @@ func (s *Server) handleSearchManga(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, resp)
 }
-

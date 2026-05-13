@@ -71,9 +71,9 @@ func TestTitleRelevanceScore(t *testing.T) {
 		query    string
 		expected int
 	}{
-		{"The Great Gatsby", "The Great Gatsby", 3},                  // exact substring
+		{"The Great Gatsby", "The Great Gatsby", 3},                   // exact substring
 		{"The Great Gatsby - F. Scott Fitzgerald", "great gatsby", 3}, // substring match
-		{"Great Adventures of Gatsby", "great gatsby", 2},            // all words present
+		{"Great Adventures of Gatsby", "great gatsby", 2},             // all words present
 		{"Great Adventures", "great gatsby", 0},                       // 1 of 2 is not > half
 		{"Unrelated Book Title", "great gatsby", 0},                   // no match
 		{"", "great gatsby", 0},

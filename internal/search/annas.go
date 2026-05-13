@@ -10,9 +10,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/PuerkitoBio/goquery"
 	"github.com/JeremiahM37/librarr/internal/config"
 	"github.com/JeremiahM37/librarr/internal/models"
+	"github.com/PuerkitoBio/goquery"
 )
 
 // AnnasArchive searches Anna's Archive by scraping HTML results.
@@ -26,7 +26,7 @@ func NewAnnasArchive(cfg *config.Config, client *http.Client) *AnnasArchive {
 	return &AnnasArchive{cfg: cfg, client: client}
 }
 
-func (a *AnnasArchive) Name() string        { return "annas" }
+func (a *AnnasArchive) Name() string         { return "annas" }
 func (a *AnnasArchive) Label() string        { return "Anna's Archive" }
 func (a *AnnasArchive) Enabled() bool        { return a.cfg.AnnasArchiveDomain != "" }
 func (a *AnnasArchive) SearchTab() string    { return "main" }

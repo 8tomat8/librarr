@@ -13,11 +13,11 @@ func TestWordOverlap(t *testing.T) {
 	}{
 		{"exact match", "The Great Gatsby", "The Great Gatsby", 1.0},
 		{"case insensitive", "the great gatsby", "THE GREAT GATSBY", 1.0},
-		{"partial match", "The Great Gatsby", "Great Stories", 0.5},  // "great" matches, "gatsby" doesn't -> 1/2 = 0.5
+		{"partial match", "The Great Gatsby", "Great Stories", 0.5}, // "great" matches, "gatsby" doesn't -> 1/2 = 0.5
 		{"no match", "The Great Gatsby", "Harry Potter", 0.0},
-		{"empty expected", "", "Some Title", 1.0},                     // empty expected = 1.0
+		{"empty expected", "", "Some Title", 1.0},                               // empty expected = 1.0
 		{"stopwords ignored", "The Book of Everything", "Everything Goes", 0.5}, // "book" + "everything" -> only "everything" matches -> 1/2 = 0.5
-		{"all stopwords", "the a an of", "different words", 1.0},      // no significant words in expected -> 1.0
+		{"all stopwords", "the a an of", "different words", 1.0},                // no significant words in expected -> 1.0
 		{"subtitle ignored", "Dune", "Dune: Part One", 1.0},
 	}
 

@@ -23,7 +23,7 @@ func NewOpenLibrary(cfg *config.Config, client *http.Client) *OpenLibrary {
 	return &OpenLibrary{cfg: cfg, client: client}
 }
 
-func (o *OpenLibrary) Name() string        { return "openlibrary" }
+func (o *OpenLibrary) Name() string         { return "openlibrary" }
 func (o *OpenLibrary) Label() string        { return "Open Library" }
 func (o *OpenLibrary) Enabled() bool        { return true }
 func (o *OpenLibrary) SearchTab() string    { return "main" }

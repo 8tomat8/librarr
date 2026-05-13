@@ -13,9 +13,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/PuerkitoBio/goquery"
 	"github.com/JeremiahM37/librarr/internal/config"
 	"github.com/JeremiahM37/librarr/internal/models"
+	"github.com/PuerkitoBio/goquery"
 )
 
 // BookTracker searches the BookTracker.org Russian book/audiobook tracker.
@@ -25,8 +25,8 @@ type BookTracker struct {
 	authClient *http.Client
 	tab        string // "main" or "audiobook"
 
-	mu       sync.Mutex
-	loggedIn bool
+	mu        sync.Mutex
+	loggedIn  bool
 	loginTime time.Time
 }
 

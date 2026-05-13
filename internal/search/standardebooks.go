@@ -23,7 +23,7 @@ func NewStandardEbooks(cfg *config.Config, client *http.Client) *StandardEbooks 
 	return &StandardEbooks{cfg: cfg, client: client}
 }
 
-func (s *StandardEbooks) Name() string        { return "standardebooks" }
+func (s *StandardEbooks) Name() string         { return "standardebooks" }
 func (s *StandardEbooks) Label() string        { return "Standard Ebooks" }
 func (s *StandardEbooks) Enabled() bool        { return true }
 func (s *StandardEbooks) SearchTab() string    { return "main" }
