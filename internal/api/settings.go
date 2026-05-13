@@ -115,6 +115,14 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 	// Load existing settings and merge.
 	existing := s.loadSettings()
 	for k, v := range data {
+		// Clearing a string field deletes the override, so the env value (or
+		// default) reapplies on next startup. Without this, settings.json
+		// would hold "" and the UI would show "" while the runtime kept
+		// using the env value — those two views would disagree.
+		if str, isStr := v.(string); isStr && str == "" {
+			delete(existing, k)
+			continue
+		}
 		existing[k] = v
 	}
 
