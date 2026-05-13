@@ -789,6 +789,30 @@ func handleDeleteUser(database *db.DB) http.HandlerFunc {
 			return
 		}
 
+		// Prevent leaving the system with no admins. API-key callers have no
+		// userID (id=0), so the self-delete check above does not protect them;
+		// without this guard, a leaked API key (or a misclicked SPA button)
+		// could nuke the only admin.
+		if users, err := database.ListUsers(); err == nil {
+			admins := 0
+			targetIsAdmin := false
+			for _, u := range users {
+				if u.Role == "admin" {
+					admins++
+					if u.ID == id {
+						targetIsAdmin = true
+					}
+				}
+			}
+			if targetIsAdmin && admins <= 1 {
+				writeJSON(w, http.StatusConflict, map[string]interface{}{
+					"success": false,
+					"error":   "Cannot delete the last admin account",
+				})
+				return
+			}
+		}
+
 		if err := database.DeleteUser(id); err != nil {
 			slog.Error("failed to delete user", "id", id, "error", err)
 			writeJSON(w, http.StatusNotFound, map[string]interface{}{
