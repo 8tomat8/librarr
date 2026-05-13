@@ -21,19 +21,19 @@ var defaultsJSON []byte
 
 // Registry is the in-memory representation of the indexer registry.
 type Registry struct {
-	Version         int               `json:"version"`
-	Annas           AnnasSpec         `json:"annas"`
-	AudioBookBay    AudioBookBaySpec  `json:"audiobookbay"`
-	ThePirateBay    URLSpec           `json:"thepiratebay"`
-	Gutenberg       URLSpec           `json:"gutenberg"`
-	OpenLibrary     OpenLibrarySpec   `json:"openlibrary"`
-	Librivox        URLSpec           `json:"librivox"`
-	StandardEbooks  URLSpec           `json:"standardebooks"`
-	MangaDex        MangaDexSpec      `json:"mangadex"`
-	Nyaa            URLSpec           `json:"nyaa"`
-	WebNovels       []WebNovelSite    `json:"webnovels"`
-	LibgenMirrors   []string          `json:"libgen_mirrors"`
-	ZLibraryDefault string            `json:"zlibrary_default"`
+	Version         int              `json:"version"`
+	Annas           AnnasSpec        `json:"annas"`
+	AudioBookBay    AudioBookBaySpec `json:"audiobookbay"`
+	ThePirateBay    URLSpec          `json:"thepiratebay"`
+	Gutenberg       URLSpec          `json:"gutenberg"`
+	OpenLibrary     OpenLibrarySpec  `json:"openlibrary"`
+	Librivox        URLSpec          `json:"librivox"`
+	StandardEbooks  URLSpec          `json:"standardebooks"`
+	MangaDex        MangaDexSpec     `json:"mangadex"`
+	Nyaa            URLSpec          `json:"nyaa"`
+	WebNovels       []WebNovelSite   `json:"webnovels"`
+	LibgenMirrors   []string         `json:"libgen_mirrors"`
+	ZLibraryDefault string           `json:"zlibrary_default"`
 }
 
 // AnnasSpec is the configurable endpoint for an Anna's-Archive-style direct-download driver.

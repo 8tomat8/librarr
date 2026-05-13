@@ -85,9 +85,9 @@ func (c *Client) FetchMetadataCtx(ctx context.Context, title, author string) (*B
 	}
 
 	meta := &BookMetadata{
-		Title:  doc.Title,
-		OLID:   doc.Key,
-		Year:   fmt.Sprintf("%d", doc.FirstPublishYear),
+		Title: doc.Title,
+		OLID:  doc.Key,
+		Year:  fmt.Sprintf("%d", doc.FirstPublishYear),
 	}
 	if doc.FirstPublishYear == 0 {
 		meta.Year = ""
@@ -229,15 +229,15 @@ type olSearchResponse struct {
 }
 
 type olSearchDoc struct {
-	Key                  string   `json:"key"`
-	Title                string   `json:"title"`
-	AuthorName           []string `json:"author_name"`
-	FirstPublishYear     int      `json:"first_publish_year"`
-	CoverI               int      `json:"cover_i"`
-	ISBN                 []string `json:"isbn"`
-	Publisher            []string `json:"publisher"`
-	Language             []string `json:"language"`
-	NumberOfPagesMedian  int      `json:"number_of_pages_median"`
+	Key                 string   `json:"key"`
+	Title               string   `json:"title"`
+	AuthorName          []string `json:"author_name"`
+	FirstPublishYear    int      `json:"first_publish_year"`
+	CoverI              int      `json:"cover_i"`
+	ISBN                []string `json:"isbn"`
+	Publisher           []string `json:"publisher"`
+	Language            []string `json:"language"`
+	NumberOfPagesMedian int      `json:"number_of_pages_median"`
 }
 
 type olWork struct {

@@ -14,22 +14,22 @@ func TestDefault_EmbeddedRegistryIsComplete(t *testing.T) {
 		t.Fatalf("Default(): %v", err)
 	}
 	checks := map[string]bool{
-		"Annas.Domain":              r.Annas.Domain == "",
-		"LibgenMirrors":             len(r.LibgenMirrors) == 0,
-		"AudioBookBay.Mirrors":      len(r.AudioBookBay.Mirrors) == 0,
-		"AudioBookBay.Trackers":     len(r.AudioBookBay.Trackers) == 0,
-		"WebNovels":                 len(r.WebNovels) == 0,
-		"Gutenberg.URL":             r.Gutenberg.URL == "",
-		"MangaDex.APIURL":           r.MangaDex.APIURL == "",
-		"MangaDex.UploadsURL":       r.MangaDex.UploadsURL == "",
-		"MangaDex.WebURL":           r.MangaDex.WebURL == "",
-		"OpenLibrary.SearchURL":     r.OpenLibrary.SearchURL == "",
-		"OpenLibrary.CoverURL":      r.OpenLibrary.CoverURL == "",
-		"Librivox.URL":              r.Librivox.URL == "",
-		"StandardEbooks.URL":        r.StandardEbooks.URL == "",
-		"Nyaa.URL":                  r.Nyaa.URL == "",
-		"ThePirateBay.URL":          r.ThePirateBay.URL == "",
-		"ZLibraryDefault":           r.ZLibraryDefault == "",
+		"Annas.Domain":          r.Annas.Domain == "",
+		"LibgenMirrors":         len(r.LibgenMirrors) == 0,
+		"AudioBookBay.Mirrors":  len(r.AudioBookBay.Mirrors) == 0,
+		"AudioBookBay.Trackers": len(r.AudioBookBay.Trackers) == 0,
+		"WebNovels":             len(r.WebNovels) == 0,
+		"Gutenberg.URL":         r.Gutenberg.URL == "",
+		"MangaDex.APIURL":       r.MangaDex.APIURL == "",
+		"MangaDex.UploadsURL":   r.MangaDex.UploadsURL == "",
+		"MangaDex.WebURL":       r.MangaDex.WebURL == "",
+		"OpenLibrary.SearchURL": r.OpenLibrary.SearchURL == "",
+		"OpenLibrary.CoverURL":  r.OpenLibrary.CoverURL == "",
+		"Librivox.URL":          r.Librivox.URL == "",
+		"StandardEbooks.URL":    r.StandardEbooks.URL == "",
+		"Nyaa.URL":              r.Nyaa.URL == "",
+		"ThePirateBay.URL":      r.ThePirateBay.URL == "",
+		"ZLibraryDefault":       r.ZLibraryDefault == "",
 	}
 	for field, empty := range checks {
 		if empty {

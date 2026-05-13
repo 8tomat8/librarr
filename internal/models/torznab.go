@@ -36,8 +36,8 @@ type TorznabCategories struct {
 }
 
 type TorznabCategory struct {
-	ID   string              `xml:"id,attr"`
-	Name string              `xml:"name,attr"`
+	ID   string               `xml:"id,attr"`
+	Name string               `xml:"name,attr"`
 	Subs []TorznabSubCategory `xml:"subcat,omitempty"`
 }
 
@@ -61,14 +61,14 @@ type TorznabChannel struct {
 }
 
 type TorznabItem struct {
-	Title     string             `xml:"title"`
-	GUID      string             `xml:"guid"`
-	Size      int64              `xml:"size"`
-	Link      string             `xml:"link"`
-	Category  string             `xml:"category,omitempty"`
-	PubDate   string             `xml:"pubDate,omitempty"`
-	Enclosure *TorznabEnclosure  `xml:"enclosure,omitempty"`
-	Attrs     []TorznabAttr      `xml:"torznab:attr,omitempty"`
+	Title     string            `xml:"title"`
+	GUID      string            `xml:"guid"`
+	Size      int64             `xml:"size"`
+	Link      string            `xml:"link"`
+	Category  string            `xml:"category,omitempty"`
+	PubDate   string            `xml:"pubDate,omitempty"`
+	Enclosure *TorznabEnclosure `xml:"enclosure,omitempty"`
+	Attrs     []TorznabAttr     `xml:"torznab:attr,omitempty"`
 }
 
 type TorznabEnclosure struct {

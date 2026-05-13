@@ -17,18 +17,18 @@ import (
 
 // Scheduler runs periodic searches for wishlist items.
 type Scheduler struct {
-	cfg         *config.Config
-	db          *db.DB
-	searchMgr   *search.Manager
-	downloadMgr *download.Manager
+	cfg           *config.Config
+	db            *db.DB
+	searchMgr     *search.Manager
+	downloadMgr   *download.Manager
 	webhookSender *webhook.Sender
 
-	mu          sync.Mutex
-	running     bool
-	lastRun     time.Time
-	lastResult  string
-	itemsFound  int
-	cancel      context.CancelFunc
+	mu         sync.Mutex
+	running    bool
+	lastRun    time.Time
+	lastResult string
+	itemsFound int
+	cancel     context.CancelFunc
 }
 
 // NewScheduler creates a new scheduler.
@@ -217,12 +217,12 @@ func (s *Scheduler) Status() map[string]interface{} {
 	defer s.mu.Unlock()
 
 	status := map[string]interface{}{
-		"enabled":       s.cfg.SchedulerEnabled,
+		"enabled":        s.cfg.SchedulerEnabled,
 		"interval_hours": s.cfg.SchedulerIntervalHours,
-		"auto_download": s.cfg.SchedulerAutoDownload,
-		"min_score":     s.cfg.SchedulerMinScore,
-		"running":       s.running,
-		"items_found":   s.itemsFound,
+		"auto_download":  s.cfg.SchedulerAutoDownload,
+		"min_score":      s.cfg.SchedulerMinScore,
+		"running":        s.running,
+		"items_found":    s.itemsFound,
 	}
 
 	if !s.lastRun.IsZero() {

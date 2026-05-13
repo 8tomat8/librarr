@@ -25,7 +25,7 @@ func NewAnnasManga(cfg *config.Config, client *http.Client) *AnnasManga {
 	}
 }
 
-func (a *AnnasManga) Name() string        { return "annas_manga" }
+func (a *AnnasManga) Name() string         { return "annas_manga" }
 func (a *AnnasManga) Label() string        { return "Anna's Archive (Manga)" }
 func (a *AnnasManga) Enabled() bool        { return a.cfg.AnnasArchiveDomain != "" }
 func (a *AnnasManga) SearchTab() string    { return "manga" }

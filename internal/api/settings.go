@@ -27,24 +27,45 @@ var sensitiveKeys = map[string]bool{
 func (s *Server) handleGetSettings(w http.ResponseWriter, _ *http.Request) {
 	settings := s.loadSettings()
 
-	// Inject current config values as defaults.
+	// Inject current config values as defaults so the UI can render fields
+	// even when nothing has been saved to settings.json yet.
 	defaults := map[string]interface{}{
-		"file_org_enabled":    s.cfg.FileOrgEnabled,
-		"annas_archive_domain": s.cfg.AnnasArchiveDomain,
-		"ebook_dir":           s.cfg.EbookDir,
-		"audiobook_dir":       s.cfg.AudiobookDir,
-		"manga_dir":           s.cfg.MangaDir,
-		"incoming_dir":        s.cfg.IncomingDir,
-		"rate_limit_enabled":  s.cfg.RateLimitEnabled,
-		"metrics_enabled":     s.cfg.MetricsEnabled,
-		"webnovel_enabled":    s.cfg.WebNovelEnabled,
-		"mangadex_enabled":    s.cfg.MangaDexEnabled,
-		"max_retries":         s.cfg.MaxRetries,
-		"foreign_lang_filter": s.searchMgr.ForeignLangFilterEnabled(),
-		"flibusta_enabled":    s.cfg.FlibustaEnabled,
-		"flibusta_url":        s.cfg.FlibustaURL,
-		"zlibrary_enabled":    s.cfg.ZLibraryEnabled,
+		"file_org_enabled":            s.cfg.FileOrgEnabled,
+		"annas_archive_domain":        s.cfg.AnnasArchiveDomain,
+		"ebook_dir":                   s.cfg.EbookDir,
+		"audiobook_dir":               s.cfg.AudiobookDir,
+		"manga_dir":                   s.cfg.MangaDir,
+		"incoming_dir":                s.cfg.IncomingDir,
+		"rate_limit_enabled":          s.cfg.RateLimitEnabled,
+		"metrics_enabled":             s.cfg.MetricsEnabled,
+		"webnovel_enabled":            s.cfg.WebNovelEnabled,
+		"mangadex_enabled":            s.cfg.MangaDexEnabled,
+		"max_retries":                 s.cfg.MaxRetries,
+		"foreign_lang_filter":         s.searchMgr.ForeignLangFilterEnabled(),
+		"flibusta_enabled":            s.cfg.FlibustaEnabled,
+		"flibusta_url":                s.cfg.FlibustaURL,
+		"zlibrary_enabled":            s.cfg.ZLibraryEnabled,
 		"remove_torrent_after_import": s.cfg.RemoveTorrentAfterImport,
+
+		// Integration URLs and credentials (sensitive ones are masked below).
+		"qb_url":               s.cfg.QBUrl,
+		"qb_user":              s.cfg.QBUser,
+		"qb_pass":              s.cfg.QBPass,
+		"prowlarr_url":         s.cfg.ProwlarrURL,
+		"prowlarr_api_key":     s.cfg.ProwlarrAPIKey,
+		"sabnzbd_url":          s.cfg.SABnzbdURL,
+		"sabnzbd_api_key":      s.cfg.SABnzbdAPIKey,
+		"sabnzbd_category":     s.cfg.SABnzbdCategory,
+		"abs_url":              s.cfg.ABSURL,
+		"abs_token":            s.cfg.ABSToken,
+		"kavita_url":           s.cfg.KavitaURL,
+		"kavita_user":          s.cfg.KavitaUser,
+		"kavita_pass":          s.cfg.KavitaPass,
+		"komga_url":            s.cfg.KomgaURL,
+		"komga_user":           s.cfg.KomgaUser,
+		"komga_pass":           s.cfg.KomgaPass,
+		"calibre_url":          s.cfg.CalibreURL,
+		"calibre_library_path": s.cfg.CalibreLibraryPath,
 	}
 
 	// Merge defaults under settings (settings override).
@@ -94,21 +115,33 @@ func (s *Server) handleSaveSettings(w http.ResponseWriter, r *http.Request) {
 	// Load existing settings and merge.
 	existing := s.loadSettings()
 	for k, v := range data {
+		// Clearing a string field deletes the override, so the env value (or
+		// default) reapplies on next startup. Without this, settings.json
+		// would hold "" and the UI would show "" while the runtime kept
+		// using the env value — those two views would disagree.
+		if str, isStr := v.(string); isStr && str == "" {
+			delete(existing, k)
+			continue
+		}
 		existing[k] = v
 	}
 
-	// Write to file.
+	// Write to file. Server-side errors get logged with full context; the
+	// HTTP response stays generic so we don't leak the on-disk file path or
+	// underlying filesystem error to the browser.
 	jsonBytes, err := json.MarshalIndent(existing, "", "  ")
 	if err != nil {
+		slog.Error("settings marshal failed", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
-			"success": false, "error": err.Error(),
+			"success": false, "error": "Failed to save settings",
 		})
 		return
 	}
 
 	if err := os.WriteFile(s.cfg.SettingsFile, jsonBytes, 0600); err != nil {
+		slog.Error("settings write failed", "path", s.cfg.SettingsFile, "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
-			"success": false, "error": err.Error(),
+			"success": false, "error": "Failed to save settings",
 		})
 		return
 	}

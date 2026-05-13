@@ -17,14 +17,14 @@ import (
 
 // Manager coordinates downloads, background jobs, and the post-download pipeline.
 type Manager struct {
-	cfg        *config.Config
-	db         *db.DB
-	qb         *QBittorrentClient
-	sab        *SABnzbdClient
-	direct     *DirectDownloader
-	organizer  *organize.Organizer
-	targets    *organize.LibraryTargets
-	health     *search.HealthTracker
+	cfg           *config.Config
+	db            *db.DB
+	qb            *QBittorrentClient
+	sab           *SABnzbdClient
+	direct        *DirectDownloader
+	organizer     *organize.Organizer
+	targets       *organize.LibraryTargets
+	health        *search.HealthTracker
 	webhookSender *webhook.Sender
 
 	mu   sync.Mutex
@@ -135,8 +135,8 @@ var validTransitions = map[string]map[string]bool{
 	"importing":   {"completed": true, "error": true, "dead_letter": true},
 	"retry_wait":  {"downloading": true, "searching": true, "queued": true, "error": true, "dead_letter": true},
 	"error":       {"queued": true, "dead_letter": true}, // manual retry or dead letter
-	"dead_letter": {"queued": true},                       // manual retry only
-	"completed":   {},                                     // terminal state
+	"dead_letter": {"queued": true},                      // manual retry only
+	"completed":   {},                                    // terminal state
 }
 
 func (m *Manager) updateJob(job *models.DownloadJob, status, detail, errMsg string) {

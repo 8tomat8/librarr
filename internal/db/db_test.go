@@ -41,14 +41,14 @@ func TestLibraryItems_CRUD(t *testing.T) {
 
 	t.Run("add and retrieve item", func(t *testing.T) {
 		item := &models.LibraryItem{
-			Title:     "The Great Gatsby",
-			Author:    "F. Scott Fitzgerald",
-			FilePath:  "/books/gatsby.epub",
-			FileSize:  500000,
+			Title:      "The Great Gatsby",
+			Author:     "F. Scott Fitzgerald",
+			FilePath:   "/books/gatsby.epub",
+			FileSize:   500000,
 			FileFormat: "epub",
-			MediaType: "ebook",
-			Source:    "annas",
-			SourceID:  "md5-abc123",
+			MediaType:  "ebook",
+			Source:     "annas",
+			SourceID:   "md5-abc123",
 		}
 
 		id, err := d.AddItem(item)
@@ -159,16 +159,16 @@ func TestDownloadJobs_CRUD(t *testing.T) {
 	d := newTestDB(t)
 
 	job := &models.DownloadJob{
-		ID:        "test-job-1",
-		Title:     "Test Book",
-		Source:    "annas",
-		Status:    "queued",
-		URL:       "https://example.com",
-		MD5:       "abc123",
-		MediaType: "ebook",
+		ID:         "test-job-1",
+		Title:      "Test Book",
+		Source:     "annas",
+		Status:     "queued",
+		URL:        "https://example.com",
+		MD5:        "abc123",
+		MediaType:  "ebook",
 		MaxRetries: 2,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
 	}
 
 	t.Run("save and get job", func(t *testing.T) {
@@ -557,6 +557,31 @@ func TestActivityLog(t *testing.T) {
 		}
 		if count != 1 {
 			t.Errorf("expected 1, got %d", count)
+		}
+	})
+
+	// LogActivity inserts into the activity_log.user column. On older
+	// schemas that column was added via ALTER TABLE in an additive migration
+	// that ran *before* the CREATE TABLE, so on a fresh DB the column did
+	// not exist and the INSERT failed silently with "no column named user".
+	// This test guards against that regression by reading the row back.
+	t.Run("LogActivity persists user column on fresh DB", func(t *testing.T) {
+		d2 := newTestDB(t)
+		d2.LogActivity("alice", "settings_changed", "settings", "Settings updated")
+
+		entries, err := d2.GetActivityLog("", "", 10, 0)
+		if err != nil {
+			t.Fatalf("GetActivityLog failed: %v", err)
+		}
+		found := false
+		for _, e := range entries {
+			if e.User == "alice" && e.Action == "settings_changed" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("LogActivity did not persist user=alice; entries=%+v", entries)
 		}
 	})
 }

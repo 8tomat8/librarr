@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"strconv"
 
@@ -14,27 +15,27 @@ type Config struct {
 	DBPath string
 
 	// qBittorrent
-	QBUrl              string
-	QBUser             string
-	QBPass             string
-	QBSavePath         string
-	QBCategory         string
+	QBUrl               string
+	QBUser              string
+	QBPass              string
+	QBSavePath          string
+	QBCategory          string
 	QBAudiobookSavePath string
 	QBAudiobookCategory string
-	QBMangaSavePath    string
-	QBMangaCategory    string
+	QBMangaSavePath     string
+	QBMangaCategory     string
 
 	// Prowlarr
 	ProwlarrURL    string
 	ProwlarrAPIKey string
 
 	// File Organization
-	FileOrgEnabled     bool
-	EbookDir           string
-	AudiobookDir       string
-	MangaDir           string
-	IncomingDir        string
-	MangaIncomingDir   string
+	FileOrgEnabled   bool
+	EbookDir         string
+	AudiobookDir     string
+	MangaDir         string
+	IncomingDir      string
+	MangaIncomingDir string
 
 	// Torznab
 	TorznabAPIKey string
@@ -60,17 +61,17 @@ type Config struct {
 	MaxTorrentSizeBytes int64
 
 	// Library Import Targets
-	CalibreLibraryPath      string
-	CalibreURL              string
-	KavitaURL               string
-	KavitaUser              string
-	KavitaPass              string
-	KavitaLibraryPath       string
-	KavitaMangaLibraryPath  string
-	ABSURL                  string
-	ABSToken                string
-	ABSLibraryID            string
-	ABSEbookLibraryID       string
+	CalibreLibraryPath     string
+	CalibreURL             string
+	KavitaURL              string
+	KavitaUser             string
+	KavitaPass             string
+	KavitaLibraryPath      string
+	KavitaMangaLibraryPath string
+	ABSURL                 string
+	ABSToken               string
+	ABSLibraryID           string
+	ABSEbookLibraryID      string
 
 	// Authentication
 	AuthUsername string
@@ -107,7 +108,7 @@ type Config struct {
 	FlibustaEnabled bool
 
 	// Z-Library
-	ZLibraryURL     string
+	ZLibraryURL      string
 	ZLibraryEmail    string
 	ZLibraryPassword string
 	ZLibraryEnabled  bool
@@ -176,12 +177,21 @@ type Config struct {
 	RenamePattern string
 
 	// Author Monitoring
-	AuthorMonitorEnabled      bool
-	AuthorCheckIntervalDays   int
+	AuthorMonitorEnabled    bool
+	AuthorCheckIntervalDays int
 }
 
-// Load reads configuration from environment variables with sensible defaults.
+// Load reads configuration from environment variables with sensible defaults,
+// then applies overrides from the settings file (if present) so values saved
+// from the UI persist across restarts.
 func Load() *Config {
+	cfg := buildFromEnv()
+	cfg.applySettingsFileOverrides()
+	return cfg
+}
+
+// buildFromEnv returns a Config populated from environment variables and defaults.
+func buildFromEnv() *Config {
 	registry := sources.Load(
 		getEnv("LIBRARR_SOURCES_PATH", ""),
 		getEnv("LIBRARR_SOURCES_URL", ""),
@@ -195,18 +205,18 @@ func Load() *Config {
 
 	return &Config{
 		Sources: registry,
-		Port:   getEnvInt("LIBRARR_PORT", 5050),
-		DBPath: getEnv("LIBRARR_DB_PATH", "/data/librarr.db"),
+		Port:    getEnvInt("LIBRARR_PORT", 5050),
+		DBPath:  getEnv("LIBRARR_DB_PATH", "/data/librarr.db"),
 
-		QBUrl:              getEnv("QB_URL", ""),
-		QBUser:             getEnv("QB_USER", "admin"),
-		QBPass:             getEnv("QB_PASS", ""),
-		QBSavePath:         getEnv("QB_SAVE_PATH", "/downloads"),
-		QBCategory:         getEnv("QB_CATEGORY", "librarr"),
+		QBUrl:               getEnv("QB_URL", ""),
+		QBUser:              getEnv("QB_USER", "admin"),
+		QBPass:              getEnv("QB_PASS", ""),
+		QBSavePath:          getEnv("QB_SAVE_PATH", "/downloads"),
+		QBCategory:          getEnv("QB_CATEGORY", "librarr"),
 		QBAudiobookSavePath: getEnv("QB_AUDIOBOOK_SAVE_PATH", "/audiobooks-incoming"),
 		QBAudiobookCategory: getEnv("QB_AUDIOBOOK_CATEGORY", "audiobooks"),
-		QBMangaSavePath:    getEnv("QB_MANGA_SAVE_PATH", "/manga-incoming"),
-		QBMangaCategory:    getEnv("QB_MANGA_CATEGORY", "manga"),
+		QBMangaSavePath:     getEnv("QB_MANGA_SAVE_PATH", "/manga-incoming"),
+		QBMangaCategory:     getEnv("QB_MANGA_CATEGORY", "manga"),
 
 		ProwlarrURL:    getEnv("PROWLARR_URL", ""),
 		ProwlarrAPIKey: getEnv("PROWLARR_API_KEY", ""),
@@ -228,8 +238,8 @@ func Load() *Config {
 		MaxRetries:          getEnvInt("MAX_RETRIES", 2),
 		RetryBackoffSeconds: getEnvInt("RETRY_BACKOFF_SECONDS", 60),
 
-		MinTorrentSizeBytes: getEnvInt64("MIN_TORRENT_SIZE_BYTES", 10000),       // 10KB
-		MaxTorrentSizeBytes: getEnvInt64("MAX_TORRENT_SIZE_BYTES", 2000000000),  // 2GB
+		MinTorrentSizeBytes: getEnvInt64("MIN_TORRENT_SIZE_BYTES", 10000),      // 10KB
+		MaxTorrentSizeBytes: getEnvInt64("MAX_TORRENT_SIZE_BYTES", 2000000000), // 2GB
 
 		CalibreLibraryPath:     getEnv("CALIBRE_LIBRARY_PATH", ""),
 		CalibreURL:             getEnv("CALIBRE_URL", ""),
@@ -274,7 +284,7 @@ func Load() *Config {
 		FlibustaURL:     getEnv("FLIBUSTA_URL", ""),
 		FlibustaEnabled: getEnvBool("FLIBUSTA_ENABLED", false),
 
-		ZLibraryURL:     getEnv("ZLIBRARY_URL", ""),
+		ZLibraryURL:      getEnv("ZLIBRARY_URL", ""),
 		ZLibraryEmail:    getEnv("ZLIBRARY_EMAIL", ""),
 		ZLibraryPassword: getEnv("ZLIBRARY_PASSWORD", ""),
 		ZLibraryEnabled:  getEnvBool("ZLIBRARY_ENABLED", false),
@@ -401,6 +411,94 @@ func (c *Config) HasZLibrary() bool {
 // HasBookTracker returns true if BookTracker is configured and enabled.
 func (c *Config) HasBookTracker() bool {
 	return c.BookTrackerEnabled && c.BookTrackerURL != "" && c.BookTrackerUser != "" && c.BookTrackerPass != ""
+}
+
+// applySettingsFileOverrides reads the JSON settings file at c.SettingsFile (if
+// it exists) and overrides matching string/bool/int fields on the Config.
+// Missing or unparseable files are silently ignored so the env-only path keeps
+// working — this is best-effort layering, not a hard config source.
+func (c *Config) applySettingsFileOverrides() {
+	if c.SettingsFile == "" {
+		return
+	}
+	data, err := os.ReadFile(c.SettingsFile)
+	if err != nil {
+		return
+	}
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return
+	}
+
+	strPtrs := map[string]*string{
+		"qb_url":                    &c.QBUrl,
+		"qb_user":                   &c.QBUser,
+		"qb_pass":                   &c.QBPass,
+		"prowlarr_url":              &c.ProwlarrURL,
+		"prowlarr_api_key":          &c.ProwlarrAPIKey,
+		"sabnzbd_url":               &c.SABnzbdURL,
+		"sabnzbd_api_key":           &c.SABnzbdAPIKey,
+		"sabnzbd_category":          &c.SABnzbdCategory,
+		"abs_url":                   &c.ABSURL,
+		"abs_token":                 &c.ABSToken,
+		"abs_library_id":            &c.ABSLibraryID,
+		"abs_ebook_library_id":      &c.ABSEbookLibraryID,
+		"abs_public_url":            &c.ABSPublicURL,
+		"kavita_url":                &c.KavitaURL,
+		"kavita_user":               &c.KavitaUser,
+		"kavita_pass":               &c.KavitaPass,
+		"kavita_library_path":       &c.KavitaLibraryPath,
+		"kavita_manga_library_path": &c.KavitaMangaLibraryPath,
+		"kavita_public_url":         &c.KavitaPublicURL,
+		"komga_url":                 &c.KomgaURL,
+		"komga_user":                &c.KomgaUser,
+		"komga_pass":                &c.KomgaPass,
+		"komga_library_id":          &c.KomgaLibraryID,
+		"komga_library_path":        &c.KomgaLibraryPath,
+		"calibre_url":               &c.CalibreURL,
+		"calibre_library_path":      &c.CalibreLibraryPath,
+		"annas_archive_domain":      &c.AnnasArchiveDomain,
+		"ebook_dir":                 &c.EbookDir,
+		"audiobook_dir":             &c.AudiobookDir,
+		"manga_dir":                 &c.MangaDir,
+		"incoming_dir":              &c.IncomingDir,
+		"manga_incoming_dir":        &c.MangaIncomingDir,
+		"flibusta_url":              &c.FlibustaURL,
+	}
+	for key, fieldPtr := range strPtrs {
+		v, ok := raw[key]
+		if !ok {
+			continue
+		}
+		s, isStr := v.(string)
+		if !isStr || s == "" {
+			continue
+		}
+		*fieldPtr = s
+	}
+
+	boolPtrs := map[string]*bool{
+		"file_org_enabled":            &c.FileOrgEnabled,
+		"rate_limit_enabled":          &c.RateLimitEnabled,
+		"metrics_enabled":             &c.MetricsEnabled,
+		"webnovel_enabled":            &c.WebNovelEnabled,
+		"mangadex_enabled":            &c.MangaDexEnabled,
+		"flibusta_enabled":            &c.FlibustaEnabled,
+		"zlibrary_enabled":            &c.ZLibraryEnabled,
+		"remove_torrent_after_import": &c.RemoveTorrentAfterImport,
+		"foreign_lang_filter":         &c.ForeignLangFilter,
+	}
+	for key, fieldPtr := range boolPtrs {
+		v, ok := raw[key]
+		if !ok {
+			continue
+		}
+		b, isBool := v.(bool)
+		if !isBool {
+			continue
+		}
+		*fieldPtr = b
+	}
 }
 
 func getEnv(key, fallback string) string {

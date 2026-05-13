@@ -48,9 +48,11 @@ func NewZLibrary(cfg *config.Config, client *http.Client) *ZLibrary {
 	}
 }
 
-func (z *ZLibrary) Name() string        { return "zlibrary" }
-func (z *ZLibrary) Label() string        { return "Z-Library" }
-func (z *ZLibrary) Enabled() bool        { return z.cfg.ZLibraryEnabled && z.cfg.ZLibraryEmail != "" && z.cfg.ZLibraryPassword != "" }
+func (z *ZLibrary) Name() string  { return "zlibrary" }
+func (z *ZLibrary) Label() string { return "Z-Library" }
+func (z *ZLibrary) Enabled() bool {
+	return z.cfg.ZLibraryEnabled && z.cfg.ZLibraryEmail != "" && z.cfg.ZLibraryPassword != ""
+}
 func (z *ZLibrary) SearchTab() string    { return "main" }
 func (z *ZLibrary) DownloadType() string { return "direct" }
 

@@ -13,10 +13,18 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with: {go-version: '1.25.x', cache: false, check-latest: true}
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::These files are not gofmt'd. Run 'gofmt -w .' locally:"
+            echo "$unformatted"
+            exit 1
+          fi
       - name: go build
         run: go build -o librarr ./cmd/librarr/
-      - name: go test
-        run: go test ./... -v -count=1
+      - name: go test (race)
+        run: go test ./... -v -count=1 -race
       - name: go vet
         run: go vet ./...
       - name: staticcheck
@@ -27,6 +35,35 @@ jobs:
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
           govulncheck ./...
+      - name: smoke test — binary boots and responds
+        run: |
+          mkdir -p /tmp/smoke-data
+          LIBRARR_PORT=15050 \
+          LIBRARR_DB_PATH=/tmp/smoke-data/librarr.db \
+          SETTINGS_FILE=/tmp/smoke-data/settings.json \
+            ./librarr > /tmp/smoke.log 2>&1 &
+          SMOKE_PID=$!
+          for i in $(seq 1 30); do
+            if curl -sf -o /dev/null http://127.0.0.1:15050/api/auth/status; then
+              echo "binary up after ${i}*500ms"
+              break
+            fi
+            sleep 0.5
+          done
+          if ! curl -sf -o /dev/null http://127.0.0.1:15050/api/auth/status; then
+            echo "::error::binary failed to respond within 15s"
+            cat /tmp/smoke.log
+            kill $SMOKE_PID 2>/dev/null
+            exit 1
+          fi
+          curl -sf http://127.0.0.1:15050/api/health > /dev/null \
+            || { echo "::error::/api/health failed"; cat /tmp/smoke.log; kill $SMOKE_PID 2>/dev/null; exit 1; }
+          kill $SMOKE_PID 2>/dev/null
+          if grep -qiE "panic|fatal" /tmp/smoke.log; then
+            echo "::error::panic/fatal in boot log:"
+            cat /tmp/smoke.log
+            exit 1
+          fi
 
   docker:
     runs-on: ubuntu-latest

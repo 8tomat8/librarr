@@ -6,11 +6,11 @@ import (
 
 func TestParseAudioFilename(t *testing.T) {
 	tests := []struct {
-		name     string
-		path     string
-		artist   string
-		album    string
-		title    string
+		name   string
+		path   string
+		artist string
+		album  string
+		title  string
 	}{
 		{
 			"artist dash title",

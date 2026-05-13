@@ -18,29 +18,29 @@ import (
 // --- Audiobookshelf Library ---
 
 type absLibraryResponse struct {
-	Results    []absItem `json:"results"`
-	Total      int       `json:"total"`
-	Page       int       `json:"page"`
-	NumPages   int       `json:"numPages"`
-	Limit      int       `json:"limit"`
+	Results  []absItem `json:"results"`
+	Total    int       `json:"total"`
+	Page     int       `json:"page"`
+	NumPages int       `json:"numPages"`
+	Limit    int       `json:"limit"`
 }
 
 type absItem struct {
-	ID    string      `json:"id"`
-	Media absMedia    `json:"media"`
+	ID    string   `json:"id"`
+	Media absMedia `json:"media"`
 }
 
 type absMedia struct {
-	Metadata    absMetadata   `json:"metadata"`
-	Duration    float64       `json:"duration"`
-	AudioFiles  []interface{} `json:"audioFiles"`
-	CoverPath   string        `json:"coverPath"`
+	Metadata   absMetadata   `json:"metadata"`
+	Duration   float64       `json:"duration"`
+	AudioFiles []interface{} `json:"audioFiles"`
+	CoverPath  string        `json:"coverPath"`
 }
 
 type absMetadata struct {
-	Title      string   `json:"title"`
-	AuthorName string   `json:"authorName"`
-	SeriesName string   `json:"seriesName"`
+	Title      string      `json:"title"`
+	AuthorName string      `json:"authorName"`
+	SeriesName string      `json:"seriesName"`
 	Authors    []absAuthor `json:"authors"`
 	Series     []absSeries `json:"series"`
 }
@@ -220,11 +220,11 @@ func (s *Server) handleLibraryManga(w http.ResponseWriter, r *http.Request) {
 	// Step 2: Get all series via POST /api/Series/all-v2.
 	limit := 100
 	reqBody := map[string]interface{}{
-		"statements": []interface{}{},
+		"statements":  []interface{}{},
 		"combination": 1,
 		"limitTo":     0,
 		"sortOptions": map[string]interface{}{
-			"sortField": 1,
+			"sortField":   1,
 			"isAscending": true,
 		},
 	}

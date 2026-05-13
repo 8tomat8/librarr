@@ -19,12 +19,12 @@ import (
 
 // Watcher monitors qBittorrent for completed torrents and runs the import pipeline.
 type Watcher struct {
-	cfg        *config.Config
-	db         *db.DB
-	qb         *QBittorrentClient
-	organizer  *organize.Organizer
-	targets    *organize.LibraryTargets
-	health     *search.HealthTracker
+	cfg       *config.Config
+	db        *db.DB
+	qb        *QBittorrentClient
+	organizer *organize.Organizer
+	targets   *organize.LibraryTargets
+	health    *search.HealthTracker
 
 	processing sync.Map // hash -> struct{}, tracks in-progress imports
 	imported   sync.Map // hash -> struct{}, tracks already-imported hashes

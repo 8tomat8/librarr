@@ -11,9 +11,9 @@ import (
 )
 
 const (
-	opdsNavMIME = "application/atom+xml;profile=opds-catalog;kind=navigation"
-	opdsAcqMIME = "application/atom+xml;profile=opds-catalog;kind=acquisition"
-	opdsOSMIME  = "application/opensearchdescription+xml"
+	opdsNavMIME  = "application/atom+xml;profile=opds-catalog;kind=navigation"
+	opdsAcqMIME  = "application/atom+xml;profile=opds-catalog;kind=acquisition"
+	opdsOSMIME   = "application/opensearchdescription+xml"
 	opdsPageSize = 50
 )
 
