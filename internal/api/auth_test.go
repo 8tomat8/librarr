@@ -194,10 +194,15 @@ func TestIsExempt(t *testing.T) {
 		{"/opds/books", true},
 		{"/metrics", true},
 		{"/auth/oidc/callback", true},
+		// OpenAPI spec is public so AI agents / tooling can introspect the
+		// API without prior auth (same precedent as /metrics and /health).
+		{"/api/openapi.json", true},
 		{"/api/search", false},
 		{"/api/download", false},
 		{"/api/library", false},
 		{"/api/users", false},
+		// Suffix-attack guard — only the exact path should be exempt.
+		{"/api/openapi.jsonx", false},
 		// Prowlarr's indexer-discovery probe hits bare /api — must be exempt
 		// because the Torznab handler does its own apikey check. But the
 		// exemption MUST be exact-path only; any /api/... JSON endpoint

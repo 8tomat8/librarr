@@ -163,14 +163,15 @@ func (s *SessionStore) Delete(token string) {
 
 // exemptPaths are paths that do not require authentication.
 var exemptPaths = map[string]bool{
-	"/":                true, // Web UI (handles its own login)
-	"/health":          true,
-	"/api/health":      true,
-	"/api/login":       true,
-	"/api/login/totp":  true,
-	"/api/register":    true,
-	"/api/auth/status": true,
-	"/readyz":          true,
+	"/":                 true, // Web UI (handles its own login)
+	"/health":           true,
+	"/api/health":       true,
+	"/api/login":        true,
+	"/api/login/totp":   true,
+	"/api/register":     true,
+	"/api/auth/status":  true,
+	"/readyz":           true,
+	"/api/openapi.json": true, // public API schema for AI/tooling discovery
 }
 
 // isExempt returns true if the path does not require auth.
