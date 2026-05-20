@@ -631,15 +631,22 @@ func handleRegister(database *db.DB, sessions *SessionStore) http.HandlerFunc {
 	}
 }
 
-// handleAuthStatus returns the current auth state (are there users? is user logged in?)
-func handleAuthStatus(database *db.DB, sessions *SessionStore) http.HandlerFunc {
+// handleAuthStatus returns the current auth state (are there users? is user logged in? is oidc available?)
+func handleAuthStatus(cfg *config.Config, database *db.DB, sessions *SessionStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userCount, _ := database.CountUsers()
 
-		resp := map[string]interface{}{
+		resp := map[string]any{
 			"multi_user":    userCount > 0,
 			"has_users":     userCount > 0,
 			"authenticated": false,
+			"oidc_enabled":  false,
+		}
+
+		// OIDC hints
+		if cfg != nil && cfg.HasOIDC() {
+			resp["oidc_enabled"] = true
+			resp["oidc_provider_name"] = cfg.OIDCProviderName
 		}
 
 		// Check session.

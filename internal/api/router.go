@@ -193,7 +193,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/login/totp", handleLoginTOTP(s.db, s.sessions))
 	s.mux.HandleFunc("POST /api/register", handleRegister(s.db, s.sessions))
 	s.mux.HandleFunc("POST /api/logout", handleLogout(s.sessions, s.db))
-	s.mux.HandleFunc("GET /api/auth/status", handleAuthStatus(s.db, s.sessions))
+	s.mux.HandleFunc("GET /api/auth/status", handleAuthStatus(s.cfg, s.db, s.sessions))
 
 	// User management (admin only).
 	s.mux.HandleFunc("GET /api/users", requireAdmin(handleListUsers(s.db)))
