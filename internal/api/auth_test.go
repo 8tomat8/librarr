@@ -1,8 +1,15 @@
 package api
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/JeremiahM37/librarr/internal/config"
+	"github.com/JeremiahM37/librarr/internal/db"
 )
 
 func TestSessionStore_CreateAndGet(t *testing.T) {
@@ -215,6 +222,94 @@ func TestIsExempt(t *testing.T) {
 			result := isExempt(tt.path)
 			if result != tt.expected {
 				t.Errorf("isExempt(%q) = %v, want %v", tt.path, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestHandleAuthStatus_OIDCHints(t *testing.T) {
+	// /api/auth/status is the canonical pre-auth endpoint the login modal
+	// hits to decide whether to render the SSO button. /api/config is gated
+	// behind the multi-user middleware once any user exists, so the modal
+	// MUST be able to read the OIDC hint here or the button silently
+	// disappears after the first user registers.
+	dir := t.TempDir()
+	database, err := db.New(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("create test db: %v", err)
+	}
+	t.Cleanup(func() { database.Close() })
+	sessions := NewSessionStore()
+
+	tests := []struct {
+		name             string
+		cfg              *config.Config
+		wantEnabled      bool
+		wantProviderName string
+	}{
+		{
+			name:        "nil config",
+			cfg:         nil,
+			wantEnabled: false,
+		},
+		{
+			name:        "OIDC disabled",
+			cfg:         &config.Config{OIDCEnabled: false},
+			wantEnabled: false,
+		},
+		{
+			name: "OIDC partially configured (no client secret)",
+			cfg: &config.Config{
+				OIDCEnabled:      true,
+				OIDCIssuer:       "https://idp.example.com",
+				OIDCClientID:     "client",
+				OIDCProviderName: "Ignored",
+			},
+			wantEnabled: false,
+		},
+		{
+			name: "OIDC fully configured",
+			cfg: &config.Config{
+				OIDCEnabled:      true,
+				OIDCIssuer:       "https://idp.example.com",
+				OIDCClientID:     "client",
+				OIDCClientSecret: "secret",
+				OIDCProviderName: "PocketID",
+			},
+			wantEnabled:      true,
+			wantProviderName: "PocketID",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/api/auth/status", nil)
+			rr := httptest.NewRecorder()
+			handleAuthStatus(tt.cfg, database, sessions)(rr, req)
+
+			if rr.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200; body=%s", rr.Code, rr.Body.String())
+			}
+			var resp map[string]any
+			if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("decode body: %v", err)
+			}
+			enabled, _ := resp["oidc_enabled"].(bool)
+			if enabled != tt.wantEnabled {
+				t.Errorf("oidc_enabled = %v, want %v", enabled, tt.wantEnabled)
+			}
+			if tt.wantEnabled {
+				if got, _ := resp["oidc_provider_name"].(string); got != tt.wantProviderName {
+					t.Errorf("oidc_provider_name = %q, want %q", got, tt.wantProviderName)
+				}
+				// MUST NOT leak the client secret on the public endpoint.
+				for k, v := range resp {
+					if s, ok := v.(string); ok && s == "secret" {
+						t.Errorf("response leaks secret-like value at key %q", k)
+					}
+				}
+			} else if _, present := resp["oidc_provider_name"]; present {
+				t.Errorf("oidc_provider_name MUST be absent when OIDC is disabled, got %v", resp["oidc_provider_name"])
 			}
 		})
 	}

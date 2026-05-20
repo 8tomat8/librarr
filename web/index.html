@@ -1386,7 +1386,7 @@ function showLoginModal() {
   }).catch(() => {});
 
   // Check OIDC config.
-  fetch('/api/config', { credentials: 'include' }).then(r => r.json()).then(data => {
+  fetch('/api/auth/status', { credentials: 'include' }).then(r => r.json()).then(data => {
     if (data.oidc_enabled) {
       document.getElementById('login-oidc-btn').classList.remove('hidden');
       document.getElementById('oidc-login-link').textContent = t('login_with', {provider: data.oidc_provider_name || 'SSO'});
