@@ -11,7 +11,6 @@ import (
 
 	"github.com/JeremiahM37/librarr/internal/config"
 	"github.com/JeremiahM37/librarr/internal/models"
-	"github.com/JeremiahM37/librarr/internal/sources"
 	"github.com/PuerkitoBio/goquery"
 )
 
@@ -129,17 +128,14 @@ func (a *AudioBookBay) searchDomain(ctx context.Context, domain, query string) (
 
 // ResolveABBMagnet fetches the detail page for an AudioBookBay result and extracts
 // the magnet URI. mirrors and fallbackTrackers come from the runtime sources
-// registry — pass nil/empty to use embedded defaults.
+// registry; if either is empty, the function returns an error rather than
+// silently using a stale fallback.
 func ResolveABBMagnet(ctx context.Context, client *http.Client, userAgent, abbPath string, mirrors, fallbackTrackers []string) (string, error) {
-	if len(mirrors) == 0 || len(fallbackTrackers) == 0 {
-		if def, err := sources.Default(); err == nil {
-			if len(mirrors) == 0 {
-				mirrors = def.AudioBookBay.Mirrors
-			}
-			if len(fallbackTrackers) == 0 {
-				fallbackTrackers = def.AudioBookBay.Trackers
-			}
-		}
+	if len(mirrors) == 0 {
+		return "", fmt.Errorf("no AudioBookBay mirrors configured (registry not loaded?)")
+	}
+	if len(fallbackTrackers) == 0 {
+		return "", fmt.Errorf("no AudioBookBay fallback trackers configured (registry not loaded?)")
 	}
 
 	infoHashRe := regexp.MustCompile(`(?i)Info\s*Hash:.*?<td[^>]*>\s*([0-9a-fA-F]{40})`)

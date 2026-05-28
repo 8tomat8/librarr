@@ -9,13 +9,13 @@ import (
 	"testing"
 
 	"github.com/JeremiahM37/librarr/internal/config"
-	"github.com/JeremiahM37/librarr/internal/sources"
+	"github.com/JeremiahM37/librarr/internal/sources/sourcestest"
 )
 
 // newTestConfig builds a Config with the given libgen mirrors injected into
 // the runtime sources registry.
 func newTestConfig(mirrors []string) *config.Config {
-	reg, _ := sources.Default()
+	reg, _ := sourcestest.Registry()
 	reg.LibgenMirrors = mirrors
 	return &config.Config{UserAgent: "test", Sources: reg}
 }
@@ -179,12 +179,12 @@ func TestFetchLibgenDownloadURL_ProgressCallback(t *testing.T) {
 	}
 }
 
-// TestLibgenMirrors_Configured ensures the embedded sources registry ships
+// TestLibgenMirrors_Configured ensures the canonical sources registry ships
 // multiple mirrors so a single mirror outage doesn't break downloads entirely.
 func TestLibgenMirrors_Configured(t *testing.T) {
-	reg, err := sources.Default()
+	reg, err := sourcestest.Registry()
 	if err != nil {
-		t.Fatalf("load embedded sources registry: %v", err)
+		t.Fatalf("load canonical sources registry: %v", err)
 	}
 	if len(reg.LibgenMirrors) < 3 {
 		t.Errorf("should have at least 3 libgen mirrors for redundancy, got %d", len(reg.LibgenMirrors))

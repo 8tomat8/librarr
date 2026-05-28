@@ -4,20 +4,16 @@
 //
 //  1. LIBRARR_SOURCES_PATH — local JSON file (takes precedence)
 //  2. LIBRARR_SOURCES_URL  — HTTP(S) URL to a JSON file
-//  3. embedded defaults    — fallback if neither is set or both fail to load
+//  3. The built-in default URL (the librarr-sources companion repo)
+//  4. On-disk cache of the last successful fetch
+//
+// The production binary ships no embedded registry — Librarr matches the
+// Prowlarr pattern of fetching its indexer definitions at runtime. The
+// on-disk cache lets subsequent restarts work even if the network is down.
 //
 // Legacy per-source environment variables (ANNAS_ARCHIVE_DOMAIN, etc.) still
 // take precedence over the registry value when they are set.
 package sources
-
-import (
-	_ "embed"
-	"encoding/json"
-	"fmt"
-)
-
-//go:embed defaults.json
-var defaultsJSON []byte
 
 // Registry is the in-memory representation of the indexer registry.
 type Registry struct {
@@ -71,16 +67,6 @@ type WebNovelSite struct {
 	Label   string `json:"label"`
 	URL     string `json:"url"`
 	BaseURL string `json:"base_url,omitempty"`
-}
-
-// Default returns the embedded fallback registry.
-// Used when no external source is configured or when fetching fails.
-func Default() (*Registry, error) {
-	var r Registry
-	if err := json.Unmarshal(defaultsJSON, &r); err != nil {
-		return nil, fmt.Errorf("decode embedded sources registry: %w", err)
-	}
-	return &r, nil
 }
 
 // WebNovel looks up a configured web-novel site by ID. Returns nil if absent.

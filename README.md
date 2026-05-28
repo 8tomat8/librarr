@@ -36,7 +36,7 @@ Librarr searches all configured indexers in parallel, scores results by confiden
 
 ### Search and Scoring
 
-- **Pluggable indexer registry** -- driver kinds listed below; defaults are embedded in the binary and overrideable at runtime via `LIBRARR_SOURCES_URL` / `LIBRARR_SOURCES_PATH`
+- **Pluggable indexer registry** -- driver kinds listed below; default endpoints are fetched at startup from the `librarr-sources` companion repo and overrideable at runtime via `LIBRARR_SOURCES_URL` / `LIBRARR_SOURCES_PATH`
 - **Confidence scoring** -- 0-100 score with breakdown (title match, author match, format, seeders, file size)
 - **Quality profiles** -- define format ranking and preferred attributes, auto-upgrade existing downloads
 - **Release profiles** -- preferred and excluded words for fine-grained filtering
@@ -106,7 +106,7 @@ Librarr searches all configured indexers in parallel, scores results by confiden
 
 ## Search Sources
 
-Librarr ships with **driver implementations** -- the protocols it can speak. The list of active indexers, their endpoints, mirrors, and enabled flags lives in a JSON registry. The binary ships an embedded copy of this registry as the default; to override at runtime, set `LIBRARR_SOURCES_URL` (a community-maintained copy lives at [`librarr-sources`](https://github.com/JeremiahM37/librarr-sources)) or `LIBRARR_SOURCES_PATH` to point at your own JSON file.
+Librarr ships with **driver implementations** -- the protocols it can speak. The list of active indexers, their endpoints, mirrors, and enabled flags lives in a JSON registry, hosted in the [`librarr-sources`](https://github.com/JeremiahM37/librarr-sources) companion repo and fetched at startup (similar to how Prowlarr syncs its indexer definitions). The binary itself ships no embedded registry. After the first successful fetch the registry is cached on disk so subsequent restarts work offline. To use a different registry, set `LIBRARR_SOURCES_URL` (another HTTP source) or `LIBRARR_SOURCES_PATH` (a local file).
 
 | Driver | Used for |
 |--------|----------|
@@ -268,8 +268,10 @@ All configuration is via environment variables. Every variable has a sensible de
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `LIBRARR_SOURCES_URL` | | URL of a JSON sources registry; fetched at startup, falls back to embedded default if unreachable |
+| `LIBRARR_SOURCES_URL` | (built-in default points at `librarr-sources`) | URL of a JSON sources registry, fetched at startup |
 | `LIBRARR_SOURCES_PATH` | | Local path to a sources registry JSON file; takes precedence over URL |
+
+Resolution order on startup: `LIBRARR_SOURCES_PATH` → `LIBRARR_SOURCES_URL` → built-in default URL → on-disk cache (`<LIBRARR_DB_PATH dir>/sources-cache.json`) → empty registry. Successful URL fetches are cached so subsequent restarts work offline. If you set `LIBRARR_SOURCES_URL`, your value replaces the default — it does not stack on top of it.
 
 Legacy per-source env vars (e.g. `PROWLARR_URL` and other per-driver overrides) continue to be honored and override values loaded from the registry.
 

@@ -9,13 +9,13 @@ import (
 	"time"
 
 	"github.com/JeremiahM37/librarr/internal/config"
-	"github.com/JeremiahM37/librarr/internal/sources"
+	"github.com/JeremiahM37/librarr/internal/sources/sourcestest"
 )
 
 // testCfgWithSourcesURL returns a config wired up with a registry whose
 // ThePirateBay endpoint points at the given test-server URL.
 func testCfgWithSourcesURL(tpbURL string) *config.Config {
-	reg, _ := sources.Default()
+	reg, _ := sourcestest.Registry()
 	reg.ThePirateBay.URL = tpbURL
 	return &config.Config{TPBEnabled: true, UserAgent: "test", Sources: reg}
 }

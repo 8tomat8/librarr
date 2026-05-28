@@ -243,9 +243,12 @@ func (c *Config) probeSettingsFileWritable() {
 
 // buildFromEnv returns a Config populated from environment variables and defaults.
 func buildFromEnv() *Config {
+	dbPath := getEnv("LIBRARR_DB_PATH", "/data/librarr.db")
+	cachePath := filepath.Join(filepath.Dir(dbPath), "sources-cache.json")
 	registry := sources.Load(
 		getEnv("LIBRARR_SOURCES_PATH", ""),
 		getEnv("LIBRARR_SOURCES_URL", ""),
+		cachePath,
 	).ApplyEnvOverrides(os.Getenv)
 
 	// Honor ANNAS_ARCHIVE_DOMAIN if set; otherwise pick up the registry value.
@@ -257,7 +260,7 @@ func buildFromEnv() *Config {
 	return &Config{
 		Sources: registry,
 		Port:    getEnvInt("LIBRARR_PORT", 5050),
-		DBPath:  getEnv("LIBRARR_DB_PATH", "/data/librarr.db"),
+		DBPath:  dbPath,
 
 		QBUrl:               getEnv("QB_URL", ""),
 		QBUser:              getEnv("QB_USER", "admin"),

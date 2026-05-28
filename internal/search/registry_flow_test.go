@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/JeremiahM37/librarr/internal/config"
-	"github.com/JeremiahM37/librarr/internal/sources"
+	"github.com/JeremiahM37/librarr/internal/sources/sourcestest"
 )
 
 // recordingServer is an httptest.Server that captures every path it receives.
@@ -47,13 +47,13 @@ func (rs *recordingServer) requestURIs() []string {
 	return out
 }
 
-// configWithRegistry returns a Config with a sources.Default() registry, ready
+// configWithRegistry returns a Config with the canonical registry, ready
 // for mutation by individual tests.
 func configWithRegistry(t *testing.T) *config.Config {
 	t.Helper()
-	reg, err := sources.Default()
+	reg, err := sourcestest.Registry()
 	if err != nil {
-		t.Fatalf("load default sources registry: %v", err)
+		t.Fatalf("load canonical sources registry: %v", err)
 	}
 	return &config.Config{UserAgent: "test", Sources: reg}
 }
@@ -219,7 +219,7 @@ func TestRegistryFlow_AnnasArchive(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			reg, _ := sources.Default()
+			reg, _ := sourcestest.Registry()
 			reg.Annas.Domain = tc.registryValue
 			reg.ApplyEnvOverrides(func(k string) string {
 				if k == "ANNAS_ARCHIVE_DOMAIN" {
@@ -263,7 +263,7 @@ func TestRegistryFlow_ZLibraryBase(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			reg, _ := sources.Default()
+			reg, _ := sourcestest.Registry()
 			reg.ZLibraryDefault = tc.registryDefault
 			cfg := &config.Config{
 				Sources:     reg,

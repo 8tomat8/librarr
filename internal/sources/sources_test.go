@@ -1,4 +1,4 @@
-package sources
+package sources_test
 
 import (
 	"net/http"
@@ -6,12 +6,19 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/JeremiahM37/librarr/internal/sources"
+	"github.com/JeremiahM37/librarr/internal/sources/sourcestest"
 )
 
-func TestDefault_EmbeddedRegistryIsComplete(t *testing.T) {
-	r, err := Default()
+// TestCanonicalRegistryIsComplete validates that the librarr-sources companion
+// registry has every field populated. Fixture test: if the JSON in
+// sourcestest/sources.json drifts and starts missing required fields, this
+// catches it before it bites callers at runtime.
+func TestCanonicalRegistryIsComplete(t *testing.T) {
+	r, err := sourcestest.Registry()
 	if err != nil {
-		t.Fatalf("Default(): %v", err)
+		t.Fatalf("Registry(): %v", err)
 	}
 	checks := map[string]bool{
 		"Annas.Domain":          r.Annas.Domain == "",
@@ -33,90 +40,145 @@ func TestDefault_EmbeddedRegistryIsComplete(t *testing.T) {
 	}
 	for field, empty := range checks {
 		if empty {
-			t.Errorf("embedded registry: %s is empty", field)
+			t.Errorf("canonical registry: %s is empty", field)
 		}
 	}
 }
 
-// TestLoad covers every resolution path: empty -> embedded, file, URL,
-// precedence, file-corrupt fallback, URL-500 fallback.
-func TestLoad(t *testing.T) {
-	good := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+// good/bad/defaultURL are package-test-level test servers shared across
+// TestLoad subtests. Each subtest gets its own tempdir for paths/caches so
+// state doesn't bleed.
+func loadTestServers(t *testing.T) (good, bad, def *httptest.Server) {
+	t.Helper()
+	good = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"version":3,"annas":{"domain":"url-example.test"}}`))
 	}))
-	defer good.Close()
-	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(500) }))
-	defer bad.Close()
+	bad = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(500) }))
+	def = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"version":9,"annas":{"domain":"default-example.test"}}`))
+	}))
+	t.Cleanup(good.Close)
+	t.Cleanup(bad.Close)
+	t.Cleanup(def.Close)
+	return
+}
 
+func TestLoad_PathWins(t *testing.T) {
+	good, _, def := loadTestServers(t)
+	t.Cleanup(sources.SwapDefaultRegistryURL(def.URL))
 	dir := t.TempDir()
-	goodFile := filepath.Join(dir, "good.json")
-	_ = os.WriteFile(goodFile, []byte(`{"version":2,"annas":{"domain":"file-example.test"},"libgen_mirrors":["https://example.test"]}`), 0o644)
-	brokenFile := filepath.Join(dir, "broken.json")
-	_ = os.WriteFile(brokenFile, []byte(`{not json`), 0o644)
+	p := filepath.Join(dir, "g.json")
+	_ = os.WriteFile(p, []byte(`{"version":2,"annas":{"domain":"file-example.test"}}`), 0o644)
 
-	cases := []struct {
-		name        string
-		path, url   string
-		wantDomain  string // "" means "embedded default"
-		wantVersion int    // 0 means "don't care / embedded"
-	}{
-		{"empty -> embedded", "", "", "", 0},
-		{"file overrides", goodFile, "", "file-example.test", 2},
-		{"url overrides", "", good.URL, "url-example.test", 3},
-		{"path beats url", goodFile, good.URL, "file-example.test", 2},
-		{"bad url falls back to embedded", "", bad.URL, "", 0},
-		{"bad file falls back to embedded", brokenFile, "", "", 0},
+	r := sources.Load(p, good.URL, filepath.Join(dir, "cache.json"))
+	if r.Annas.Domain != "file-example.test" || r.Version != 2 {
+		t.Fatalf("got %+v", r.Annas)
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			r := Load(tc.path, tc.url)
-			if r == nil {
-				t.Fatal("Load returned nil")
-			}
-			if tc.wantDomain == "" {
-				// Embedded fallback expected — confirm something non-empty.
-				if r.Annas.Domain == "" {
-					t.Errorf("expected embedded Annas.Domain, got empty")
-				}
-				return
-			}
-			if r.Annas.Domain != tc.wantDomain {
-				t.Errorf("Annas.Domain = %q, want %q", r.Annas.Domain, tc.wantDomain)
-			}
-			if tc.wantVersion > 0 && r.Version != tc.wantVersion {
-				t.Errorf("Version = %d, want %d", r.Version, tc.wantVersion)
-			}
-		})
+}
+
+func TestLoad_UserURLOverridesDefault(t *testing.T) {
+	good, _, def := loadTestServers(t)
+	t.Cleanup(sources.SwapDefaultRegistryURL(def.URL))
+	dir := t.TempDir()
+	cache := filepath.Join(dir, "cache.json")
+
+	r := sources.Load("", good.URL, cache)
+	if r.Annas.Domain != "url-example.test" || r.Version != 3 {
+		t.Fatalf("got %+v", r.Annas)
+	}
+	// User URL success writes cache.
+	if _, err := os.Stat(cache); err != nil {
+		t.Errorf("expected cache write: %v", err)
+	}
+}
+
+func TestLoad_FallsToDefaultURLWhenUserURLBad(t *testing.T) {
+	_, bad, def := loadTestServers(t)
+	t.Cleanup(sources.SwapDefaultRegistryURL(def.URL))
+	dir := t.TempDir()
+
+	r := sources.Load("", bad.URL, filepath.Join(dir, "cache.json"))
+	if r.Annas.Domain != "default-example.test" || r.Version != 9 {
+		t.Fatalf("got %+v", r.Annas)
+	}
+}
+
+func TestLoad_FallsToCacheWhenAllURLsBad(t *testing.T) {
+	_, bad, _ := loadTestServers(t)
+	t.Cleanup(sources.SwapDefaultRegistryURL(bad.URL))
+	dir := t.TempDir()
+	cache := filepath.Join(dir, "cache.json")
+	_ = os.WriteFile(cache, []byte(`{"version":7,"annas":{"domain":"cache-example.test"}}`), 0o644)
+
+	r := sources.Load("", bad.URL, cache)
+	if r.Annas.Domain != "cache-example.test" || r.Version != 7 {
+		t.Fatalf("got %+v", r.Annas)
+	}
+}
+
+func TestLoad_DefaultURLWritesCache(t *testing.T) {
+	_, _, def := loadTestServers(t)
+	t.Cleanup(sources.SwapDefaultRegistryURL(def.URL))
+	dir := t.TempDir()
+	cache := filepath.Join(dir, "fresh.json")
+
+	_ = sources.Load("", "", cache)
+	if _, err := os.Stat(cache); err != nil {
+		t.Fatalf("expected cache written: %v", err)
+	}
+}
+
+func TestLoad_AllEmptyReturnsEmptyRegistry(t *testing.T) {
+	_, bad, _ := loadTestServers(t)
+	t.Cleanup(sources.SwapDefaultRegistryURL(bad.URL))
+
+	r := sources.Load("", "", "")
+	if r == nil {
+		t.Fatal("Load returned nil")
+	}
+	if r.Annas.Domain != "" || r.Version != 0 {
+		t.Errorf("expected empty registry, got %+v", r)
+	}
+}
+
+func TestLoad_BrokenFileFallsThroughToDefaultURL(t *testing.T) {
+	_, _, def := loadTestServers(t)
+	t.Cleanup(sources.SwapDefaultRegistryURL(def.URL))
+	dir := t.TempDir()
+	broken := filepath.Join(dir, "b.json")
+	_ = os.WriteFile(broken, []byte(`{not json`), 0o644)
+
+	r := sources.Load(broken, "", filepath.Join(dir, "cache.json"))
+	if r.Annas.Domain != "default-example.test" {
+		t.Fatalf("got %+v", r.Annas)
 	}
 }
 
 func TestApplyEnvOverrides(t *testing.T) {
 	cases := []struct {
-		name string
-		envs map[string]string
-		want string // "" => unchanged from embedded default
+		name    string
+		envs    map[string]string
+		initial string
+		want    string
 	}{
-		{"unset leaves value", nil, ""},
-		{"ANNAS_ARCHIVE_DOMAIN overrides", map[string]string{"ANNAS_ARCHIVE_DOMAIN": "override.test"}, "override.test"},
+		{"unset leaves value", nil, "starting.test", "starting.test"},
+		{"ANNAS_ARCHIVE_DOMAIN overrides", map[string]string{"ANNAS_ARCHIVE_DOMAIN": "override.test"}, "starting.test", "override.test"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			r, _ := Default()
-			original := r.Annas.Domain
+			r := &sources.Registry{Annas: sources.AnnasSpec{Domain: tc.initial}}
 			r.ApplyEnvOverrides(func(k string) string { return tc.envs[k] })
-			want := tc.want
-			if want == "" {
-				want = original
-			}
-			if r.Annas.Domain != want {
-				t.Errorf("Annas.Domain = %q, want %q", r.Annas.Domain, want)
+			if r.Annas.Domain != tc.want {
+				t.Errorf("Annas.Domain = %q, want %q", r.Annas.Domain, tc.want)
 			}
 		})
 	}
 }
 
 func TestWebNovelLookup(t *testing.T) {
-	r, _ := Default()
+	r := &sources.Registry{WebNovels: []sources.WebNovelSite{
+		{ID: "freewebnovel", URL: "https://example.test/freewebnovel"},
+	}}
 	if site := r.WebNovel("freewebnovel"); site == nil || site.URL == "" {
 		t.Errorf("expected freewebnovel entry with URL, got %+v", site)
 	}
