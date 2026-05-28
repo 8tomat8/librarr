@@ -271,7 +271,7 @@ All configuration is via environment variables. Every variable has a sensible de
 | `LIBRARR_SOURCES_URL` | | URL of a JSON sources registry; fetched at startup, falls back to embedded default if unreachable |
 | `LIBRARR_SOURCES_PATH` | | Local path to a sources registry JSON file; takes precedence over URL |
 
-Legacy per-source env vars (`ANNAS_ARCHIVE_DOMAIN`, `PROWLARR_URL`, etc.) continue to be honored and override values loaded from the registry.
+Legacy per-source env vars (e.g. `PROWLARR_URL` and other per-driver overrides) continue to be honored and override values loaded from the registry.
 
 ### Search / Downloads
 
@@ -343,7 +343,7 @@ Legacy per-source env vars (`ANNAS_ARCHIVE_DOMAIN`, `PROWLARR_URL`, etc.) contin
 |--------|------|-------------|
 | POST | `/api/download` | Download a direct-download result |
 | POST | `/api/download/torrent` | Download a torrent result |
-| POST | `/api/download/annas` | Download from Anna's Archive |
+| POST | `/api/download/annas` | Download via content-hash (MD5/key) lookup |
 | POST | `/api/download/audiobook` | Download an audiobook |
 | GET | `/api/downloads` | List active/completed downloads |
 | DELETE | `/api/downloads/torrent/{hash}` | Remove a torrent download |
