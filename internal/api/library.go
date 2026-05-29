@@ -21,7 +21,15 @@ func (s *Server) handleLibrary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// /api/library is the ebooks tab; default to media_type="ebook" so
+	// audiobooks/manga imported into the local DB don't bleed into this
+	// view. Callers that genuinely want every row can pass ?type=all.
 	mediaType := r.URL.Query().Get("type")
+	if mediaType == "" {
+		mediaType = "ebook"
+	} else if mediaType == "all" {
+		mediaType = ""
+	}
 	limit := queryBoundedInt(r, "limit", 50, 1, 500)
 	offset := queryBoundedInt(r, "offset", 0, 0, 1_000_000)
 	tagFilter := r.URL.Query().Get("tag")
@@ -85,6 +93,44 @@ func (s *Server) handleLibrary(w http.ResponseWriter, r *http.Request) {
 		"total":  total,
 		"limit":  limit,
 		"offset": offset,
+	})
+}
+
+// serveLocalLibraryByMediaType is the fallback used by /api/library/audiobooks
+// and /api/library/manga when ABS / Kavita aren't configured. Response shape
+// matches the ABS handler (items/total/page/pages) so the UI's existing
+// pagination code works against both code paths.
+func (s *Server) serveLocalLibraryByMediaType(w http.ResponseWriter, r *http.Request, mediaType string) {
+	const pageSize = 100
+	page := queryInt(r, "page", 1)
+	if page < 1 {
+		page = 1
+	}
+	offset := (page - 1) * pageSize
+
+	items, err := s.db.GetItems(mediaType, pageSize, offset)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+			"error": err.Error(),
+		})
+		return
+	}
+	total, _ := s.db.CountItems(mediaType)
+
+	jsonItems := make([]map[string]interface{}, 0, len(items))
+	for _, item := range items {
+		jsonItems = append(jsonItems, db.ItemToJSON(item))
+	}
+	pages := 0
+	if total > 0 {
+		pages = int(math.Ceil(float64(total) / float64(pageSize)))
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"items": jsonItems,
+		"total": total,
+		"page":  page,
+		"pages": pages,
 	})
 }
 

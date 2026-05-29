@@ -55,13 +55,12 @@ type absSeries struct {
 
 func (s *Server) handleLibraryAudiobooks(w http.ResponseWriter, r *http.Request) {
 	if !s.cfg.HasAudiobookshelf() {
-		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"items": []interface{}{},
-			"total": 0,
-			"page":  1,
-			"pages": 0,
-			"error": "Audiobookshelf not configured",
-		})
+		// Issue #49: when ABS isn't configured, surface audiobooks that
+		// were imported into the local DB (e.g. via /api/import/files
+		// or the curl-based bulk import flow) rather than returning an
+		// empty list. Without this fallback those items only appear
+		// under /api/library and get mislabeled as ebooks in the UI.
+		s.serveLocalLibraryByMediaType(w, r, "audiobook")
 		return
 	}
 
@@ -185,11 +184,10 @@ func (s *Server) handleLibraryAudiobooks(w http.ResponseWriter, r *http.Request)
 
 func (s *Server) handleLibraryManga(w http.ResponseWriter, r *http.Request) {
 	if !s.cfg.HasKavita() {
-		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"items": []interface{}{},
-			"total": 0,
-			"error": "Kavita not configured",
-		})
+		// Issue #49: same as audiobooks — fall back to local DB so manga
+		// imported via /api/import/files is visible in its own tab
+		// instead of leaking into /api/library.
+		s.serveLocalLibraryByMediaType(w, r, "manga")
 		return
 	}
 
