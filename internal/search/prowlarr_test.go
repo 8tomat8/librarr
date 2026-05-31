@@ -149,8 +149,8 @@ func TestProwlarr_SearchAudiobook(t *testing.T) {
 	}
 
 	for _, r := range results {
-		if r.Source != "audiobook" {
-			t.Errorf("expected source audiobook, got %s", r.Source)
+		if r.Source != "prowlarr_audiobooks" {
+			t.Errorf("expected source prowlarr_audiobooks, got %s", r.Source)
 		}
 	}
 }
