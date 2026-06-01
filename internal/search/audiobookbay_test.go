@@ -4,11 +4,13 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/JeremiahM37/librarr/internal/config"
 	"github.com/JeremiahM37/librarr/internal/sources/sourcestest"
+	"github.com/PuerkitoBio/goquery"
 )
 
 type abbRoundTripper struct {
@@ -88,5 +90,62 @@ func TestResolveABBMagnetUsesBrowserHeaders(t *testing.T) {
 	}
 	if got := rt.req.Header.Get("Accept-Encoding"); got != "identity" {
 		t.Fatalf("Accept-Encoding = %q, want identity", got)
+	}
+}
+
+func TestResolveABBMagnetFallsBackToLegacyInfoHashRegex(t *testing.T) {
+	tests := []struct {
+		name     string
+		body     string
+		infoHash string
+	}{
+		{
+			name:     "same line text",
+			body:     `<html><body><h1>The Martian</h1><div>Info Hash: 89ABCDEF0123456789ABCDEF0123456789ABCDEF</div></body></html>`,
+			infoHash: "89ABCDEF0123456789ABCDEF0123456789ABCDEF",
+		},
+		{
+			name:     "same line td",
+			body:     `<html><body><h1>The Martian</h1><table><tr><td colspan="2">Info Hash: legacy layout</td></tr><tr><td>FEDCBA9876543210FEDCBA9876543210FEDCBA98</td></tr></table></body></html>`,
+			infoHash: "FEDCBA9876543210FEDCBA9876543210FEDCBA98",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rt := &abbRoundTripper{body: tt.body}
+			client := &http.Client{Transport: rt}
+
+			magnet, err := ResolveABBMagnet(context.Background(), client, "test", "/abss/the-martian-andy-weir/", []string{"audiobookbay.lu"}, []string{"udp://fallback.example:1337/announce"})
+			if err != nil {
+				t.Fatalf("ResolveABBMagnet returned error: %v", err)
+			}
+			if !strings.HasPrefix(magnet, "magnet:?xt=urn:btih:"+tt.infoHash) {
+				t.Fatalf("unexpected magnet: %s", magnet)
+			}
+			if !strings.Contains(magnet, "tr=udp%3A%2F%2Ffallback.example%3A1337%2Fannounce") {
+				t.Fatalf("expected fallback tracker in magnet: %s", magnet)
+			}
+		})
+	}
+}
+
+func TestExtractABBInfoHash(t *testing.T) {
+	doc, err := goquery.NewDocumentFromReader(strings.NewReader(`<html><body>
+		<table>
+			<tr>
+				<td>Info Hash:</td>
+				<td>0123456789ABCDEF0123456789ABCDEF01234567</td>
+			</tr>
+		</table>
+	</body></html>`))
+	if err != nil {
+		t.Fatalf("parse HTML: %v", err)
+	}
+
+	got := extractABBInfoHash(doc, regexp.MustCompile(`(?i)\b[0-9a-f]{40}\b`))
+	want := "0123456789ABCDEF0123456789ABCDEF01234567"
+	if got != want {
+		t.Fatalf("extractABBInfoHash = %q, want %q", got, want)
 	}
 }
