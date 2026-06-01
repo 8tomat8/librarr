@@ -138,7 +138,6 @@ func ResolveABBMagnet(ctx context.Context, client *http.Client, userAgent, abbPa
 		return "", fmt.Errorf("no AudioBookBay fallback trackers configured (registry not loaded?)")
 	}
 
-	infoHashRe := regexp.MustCompile(`(?i)Info\s*Hash:.*?<td[^>]*>\s*([0-9a-fA-F]{40})`)
 	trackerRe := regexp.MustCompile(`<td>((?:udp|http)://[^<]+)</td>`)
 	titleRe := regexp.MustCompile(`<h1[^>]*>(.*?)</h1>`)
 
@@ -163,12 +162,10 @@ func ResolveABBMagnet(ctx context.Context, client *http.Client, userAgent, abbPa
 		}
 
 		htmlContent, _ := doc.Html()
-
-		hashMatch := infoHashRe.FindStringSubmatch(htmlContent)
-		if len(hashMatch) < 2 {
+		infoHash := extractABBInfoHash(doc)
+		if infoHash == "" {
 			continue
 		}
-		infoHash := hashMatch[1]
 
 		// Extract trackers.
 		trackers := trackerRe.FindAllStringSubmatch(htmlContent, -1)
@@ -205,4 +202,30 @@ func ResolveABBMagnet(ctx context.Context, client *http.Client, userAgent, abbPa
 		return magnet, nil
 	}
 	return "", fmt.Errorf("failed to resolve ABB magnet from all domains")
+}
+
+func extractABBInfoHash(doc *goquery.Document) string {
+	var infoHash string
+	hashRe := regexp.MustCompile(`(?i)\b[0-9a-f]{40}\b`)
+
+	doc.Find("tr").EachWithBreak(func(_ int, row *goquery.Selection) bool {
+		cells := row.Find("td")
+		if cells.Length() < 2 {
+			return true
+		}
+
+		label := strings.ToLower(strings.TrimSpace(cells.First().Text()))
+		if !strings.Contains(label, "info hash") {
+			return true
+		}
+
+		value := strings.TrimSpace(cells.Eq(1).Text())
+		if match := hashRe.FindString(value); match != "" {
+			infoHash = match
+			return false
+		}
+		return true
+	})
+
+	return infoHash
 }
