@@ -47,15 +47,50 @@ func TestExtractABBInfoHash(t *testing.T) {
 	}
 }
 
+func TestAudioBookBaySearchSetsBrowserHeaders(t *testing.T) {
+	rt := &abbRoundTripper{
+		body: `<html><body>
+		<div class="post">
+			<div class="postTitle"><h2><a href="/abss/the-martian-andy-weir/">The Martian - Andy Weir</a></h2></div>
+			<div class="postInfo">Language: English <span style="margin-left:100px;">Keywords:</div>
+		</div>
+		</body></html>`,
+	}
+	reg, err := sourcestest.Registry()
+	if err != nil {
+		t.Fatalf("load registry: %v", err)
+	}
+	cfg := &config.Config{
+		UserAgent: "test",
+		Sources:   reg,
+	}
+	cfg.Sources.AudioBookBay.Mirrors = []string{"audiobookbay.lu"}
+	a := &AudioBookBay{cfg: cfg, client: &http.Client{Transport: rt}}
+
+	results, err := a.searchDomain(context.Background(), "audiobookbay.lu", "The Martian")
+	if err != nil {
+		t.Fatalf("searchDomain returned error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if got := rt.req.Header.Get("User-Agent"); got != abbBrowserUserAgent {
+		t.Fatalf("User-Agent = %q, want %q", got, abbBrowserUserAgent)
+	}
+	if got := rt.req.Header.Get("Accept-Language"); got != "en-US,en;q=0.9" {
+		t.Fatalf("Accept-Language = %q, want en-US,en;q=0.9", got)
+	}
+	if got := rt.req.Header.Get("Upgrade-Insecure-Requests"); got != "1" {
+		t.Fatalf("Upgrade-Insecure-Requests = %q, want 1", got)
+	}
+}
+
 func TestResolveABBMagnetUsesInfoHashRow(t *testing.T) {
 	rt := &abbRoundTripper{
 		body: `<html><body>
 		<h1>The Martian</h1>
 		<table>
-			<tr>
-				<td>Info Hash:</td>
-				<td>0123456789ABCDEF0123456789ABCDEF01234567</td>
-			</tr>
+			<tr><td>Info Hash:</td><td>0123456789ABCDEF0123456789ABCDEF01234567</td></tr>
 			<tr><td>udp://tracker.example:1337/announce</td></tr>
 		</table>
 		</body></html>`,
@@ -79,5 +114,11 @@ func TestResolveABBMagnetUsesInfoHashRow(t *testing.T) {
 	}
 	if !strings.HasPrefix(magnet, "magnet:?xt=urn:btih:0123456789ABCDEF0123456789ABCDEF01234567") {
 		t.Fatalf("unexpected magnet: %s", magnet)
+	}
+	if got := rt.req.Header.Get("User-Agent"); got != abbBrowserUserAgent {
+		t.Fatalf("User-Agent = %q, want %q", got, abbBrowserUserAgent)
+	}
+	if got := rt.req.Header.Get("Accept-Encoding"); got != "identity" {
+		t.Fatalf("Accept-Encoding = %q, want identity", got)
 	}
 }

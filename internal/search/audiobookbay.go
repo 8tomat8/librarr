@@ -14,6 +14,8 @@ import (
 	"github.com/PuerkitoBio/goquery"
 )
 
+const abbBrowserUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+
 // AudioBookBay searches an AudioBookBay-style scrape source for audiobook torrents.
 // Mirrors and trackers are loaded from the runtime sources registry.
 type AudioBookBay struct {
@@ -59,7 +61,7 @@ func (a *AudioBookBay) searchDomain(ctx context.Context, domain, query string) (
 	q.Set("s", query)
 	q.Set("tt", "1")
 	req.URL.RawQuery = q.Encode()
-	req.Header.Set("User-Agent", a.cfg.UserAgent)
+	setABBRequestHeaders(req)
 
 	resp, err := a.client.Do(req)
 	if err != nil {
@@ -137,6 +139,7 @@ func ResolveABBMagnet(ctx context.Context, client *http.Client, userAgent, abbPa
 	if len(fallbackTrackers) == 0 {
 		return "", fmt.Errorf("no AudioBookBay fallback trackers configured (registry not loaded?)")
 	}
+	_ = userAgent // retained for API compatibility; ABB now uses a browser-like header set.
 
 	trackerRe := regexp.MustCompile(`<td>((?:udp|http)://[^<]+)</td>`)
 	titleRe := regexp.MustCompile(`<h1[^>]*>(.*?)</h1>`)
@@ -148,7 +151,7 @@ func ResolveABBMagnet(ctx context.Context, client *http.Client, userAgent, abbPa
 		if err != nil {
 			continue
 		}
-		req.Header.Set("User-Agent", userAgent)
+		setABBRequestHeaders(req)
 
 		resp, err := client.Do(req)
 		if err != nil {
@@ -228,4 +231,12 @@ func extractABBInfoHash(doc *goquery.Document) string {
 	})
 
 	return infoHash
+}
+
+func setABBRequestHeaders(req *http.Request) {
+	req.Header.Set("User-Agent", abbBrowserUserAgent)
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
+	req.Header.Set("Upgrade-Insecure-Requests", "1")
+	req.Header.Set("Accept-Encoding", "identity")
 }
