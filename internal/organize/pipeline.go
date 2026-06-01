@@ -1,6 +1,7 @@
 package organize
 
 import (
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -82,9 +83,12 @@ func (o *Organizer) OrganizeAudiobook(filePath, title, author string) (string, e
 	}
 
 	// If source is a directory, move its contents.
-	info, err := os.Stat(filePath)
+	info, err := os.Lstat(filePath)
 	if err != nil {
 		return filePath, err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return filePath, fmt.Errorf("refusing to organize symlink source %q", filePath)
 	}
 
 	safeAuthor := sanitizePath(author, 80)
@@ -241,6 +245,9 @@ func moveDirTree(srcDir, dstDir string) error {
 			return walkErr
 		}
 		if path == srcDir {
+			return nil
+		}
+		if d.Type()&os.ModeSymlink != 0 {
 			return nil
 		}
 

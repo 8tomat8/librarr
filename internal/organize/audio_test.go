@@ -165,3 +165,85 @@ func TestOrganizeAudiobookMovesNestedTreeRecursively(t *testing.T) {
 		t.Fatalf("expected source tree removed, stat err=%v", err)
 	}
 }
+
+func TestOrganizeAudiobookSkipsSymlinks(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "incoming", "book")
+	outside := filepath.Join(root, "outside.txt")
+
+	if err := os.MkdirAll(src, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "track01.m4b"), []byte("audio"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(outside, []byte("outside"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(src, "linked.m4b")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	cfg := &config.Config{
+		FileOrgEnabled: true,
+		AudiobookDir:   filepath.Join(root, "audiobooks"),
+	}
+	o := NewOrganizer(cfg)
+
+	dest, err := o.OrganizeAudiobook(src, "Symlink Book", "Careful Author")
+	if err != nil {
+		t.Fatalf("organize failed: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(dest, "track01.m4b")); err != nil {
+		t.Fatalf("expected regular track at destination: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(dest, "linked.m4b")); !os.IsNotExist(err) {
+		t.Fatalf("expected symlink skipped, lstat err=%v", err)
+	}
+	data, err := os.ReadFile(outside)
+	if err != nil {
+		t.Fatalf("expected symlink target left untouched: %v", err)
+	}
+	if string(data) != "outside" {
+		t.Fatalf("outside file = %q, want %q", data, "outside")
+	}
+}
+
+func TestOrganizeAudiobookRejectsSymlinkSource(t *testing.T) {
+	root := t.TempDir()
+	realSrc := filepath.Join(root, "incoming", "book")
+	linkSrc := filepath.Join(root, "incoming", "linked-book")
+
+	if err := os.MkdirAll(realSrc, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(realSrc, "track01.m4b"), []byte("audio"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(realSrc, linkSrc); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+
+	cfg := &config.Config{
+		FileOrgEnabled: true,
+		AudiobookDir:   filepath.Join(root, "audiobooks"),
+	}
+	o := NewOrganizer(cfg)
+
+	_, err := o.OrganizeAudiobook(linkSrc, "Linked Book", "Careful Author")
+	if err == nil {
+		t.Fatal("expected symlink source error")
+	}
+
+	destDir := filepath.Join(cfg.AudiobookDir, "Careful Author", "Linked Book")
+	if _, err := os.Stat(destDir); !os.IsNotExist(err) {
+		t.Fatalf("expected no destination for symlink source, stat err=%v", err)
+	}
+	if _, err := os.Stat(filepath.Join(realSrc, "track01.m4b")); err != nil {
+		t.Fatalf("expected symlink target left untouched: %v", err)
+	}
+	if _, err := os.Lstat(linkSrc); err != nil {
+		t.Fatalf("expected symlink source left untouched: %v", err)
+	}
+}
