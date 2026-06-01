@@ -1,7 +1,11 @@
 package organize
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
+
+	"github.com/JeremiahM37/librarr/internal/config"
 )
 
 func TestParseAudioFilename(t *testing.T) {
@@ -93,5 +97,71 @@ func TestExtractAudioMetaFromDir_NonexistentDir(t *testing.T) {
 	meta := ExtractAudioMetaFromDir("/nonexistent/path")
 	if meta != nil {
 		t.Error("expected nil for nonexistent directory")
+	}
+}
+
+func TestOrganizeAudiobookMissingSourceDoesNotCreateDestDir(t *testing.T) {
+	root := t.TempDir()
+	cfg := &config.Config{
+		FileOrgEnabled: true,
+		AudiobookDir:   filepath.Join(root, "audiobooks"),
+	}
+	o := NewOrganizer(cfg)
+
+	missing := filepath.Join(root, "incoming", "missing.m4b")
+	_, err := o.OrganizeAudiobook(missing, "Missing Book", "Missing Author")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+
+	destDir := filepath.Join(cfg.AudiobookDir, "Missing Author", "Missing Book")
+	if _, statErr := os.Stat(destDir); !os.IsNotExist(statErr) {
+		t.Fatalf("expected no dest dir on failure, stat err=%v", statErr)
+	}
+}
+
+func TestOrganizeAudiobookMovesNestedTreeRecursively(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "incoming", "book")
+	cd1 := filepath.Join(src, "CD1")
+	cd2 := filepath.Join(src, "CD2", "Extras")
+
+	if err := os.MkdirAll(cd1, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(cd2, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cd1, "track01.m4b"), []byte("cd1"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cd2, "track02.m4b"), []byte("cd2"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := &config.Config{
+		FileOrgEnabled: true,
+		AudiobookDir:   filepath.Join(root, "audiobooks"),
+	}
+	o := NewOrganizer(cfg)
+
+	dest, err := o.OrganizeAudiobook(src, "Nested Book", "Recursive Author")
+	if err != nil {
+		t.Fatalf("organize failed: %v", err)
+	}
+
+	wantRoot := filepath.Join(cfg.AudiobookDir, "Recursive Author", "Nested Book")
+	if dest != wantRoot {
+		t.Fatalf("dest = %q, want %q", dest, wantRoot)
+	}
+
+	if _, err := os.Stat(filepath.Join(wantRoot, "CD1", "track01.m4b")); err != nil {
+		t.Fatalf("expected CD1 track at destination: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(wantRoot, "CD2", "Extras", "track02.m4b")); err != nil {
+		t.Fatalf("expected nested track at destination: %v", err)
+	}
+	if _, err := os.Stat(src); !os.IsNotExist(err) {
+		t.Fatalf("expected source tree removed, stat err=%v", err)
 	}
 }

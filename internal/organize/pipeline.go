@@ -81,32 +81,25 @@ func (o *Organizer) OrganizeAudiobook(filePath, title, author string) (string, e
 		author = "Unknown"
 	}
 
-	safeAuthor := sanitizePath(author, 80)
-	safeTitle := sanitizePath(title, 80)
-
-	destDir := filepath.Join(o.cfg.AudiobookDir, safeAuthor, safeTitle)
-	if err := os.MkdirAll(destDir, 0755); err != nil {
-		return filePath, err
-	}
-
 	// If source is a directory, move its contents.
 	info, err := os.Stat(filePath)
 	if err != nil {
 		return filePath, err
 	}
 
+	safeAuthor := sanitizePath(author, 80)
+	safeTitle := sanitizePath(title, 80)
+
+	destDir := filepath.Join(o.cfg.AudiobookDir, safeAuthor, safeTitle)
 	if info.IsDir() {
-		entries, err := os.ReadDir(filePath)
-		if err != nil {
+		if err := moveDirTree(filePath, destDir); err != nil {
 			return filePath, err
 		}
-		for _, entry := range entries {
-			src := filepath.Join(filePath, entry.Name())
-			dst := filepath.Join(destDir, entry.Name())
-			_ = moveFile(src, dst)
-		}
-		_ = os.RemoveAll(filePath)
 		return destDir, nil
+	}
+
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		return filePath, err
 	}
 
 	destPath := filepath.Join(destDir, filepath.Base(filePath))
@@ -236,6 +229,41 @@ func moveFile(src, dst string) error {
 		return err
 	}
 	return os.Remove(src)
+}
+
+func moveDirTree(srcDir, dstDir string) error {
+	if err := os.MkdirAll(dstDir, 0755); err != nil {
+		return err
+	}
+
+	err := filepath.WalkDir(srcDir, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if path == srcDir {
+			return nil
+		}
+
+		rel, err := filepath.Rel(srcDir, path)
+		if err != nil {
+			return err
+		}
+
+		dstPath := filepath.Join(dstDir, rel)
+		if d.IsDir() {
+			return os.MkdirAll(dstPath, 0755)
+		}
+
+		if err := os.MkdirAll(filepath.Dir(dstPath), 0755); err != nil {
+			return err
+		}
+		return moveFile(path, dstPath)
+	})
+	if err != nil {
+		return err
+	}
+
+	return os.RemoveAll(srcDir)
 }
 
 // copyFileForOrg copies a file without removing the source.
