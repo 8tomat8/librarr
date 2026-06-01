@@ -506,7 +506,11 @@ func (s *Server) processApprovedRequest(req *models.Request) {
 
 	switch downloadType {
 	case "torrent":
-		url := resolveTorrentURLForRequest(dlReq, chosen)
+		url, err := s.resolveTorrentURL(ctx, dlReq, chosen)
+		if err != nil {
+			s.failRequest(req, fmt.Sprintf("Torrent download failed: %v", err))
+			return
+		}
 		if url == "" {
 			s.failRequest(req, "No torrent download URL available")
 			return
@@ -674,26 +678,6 @@ func scoreResult(r models.SearchResult, bookType string) int {
 	}
 
 	return score
-}
-
-// resolveTorrentURLForRequest resolves the torrent URL from a download request and chosen result.
-func resolveTorrentURLForRequest(dlReq models.DownloadRequest, chosen models.SearchResult) string {
-	if dlReq.DownloadURL != "" {
-		return dlReq.DownloadURL
-	}
-	if dlReq.MagnetURL != "" {
-		return dlReq.MagnetURL
-	}
-	if chosen.MagnetURL != "" {
-		return chosen.MagnetURL
-	}
-	if chosen.DownloadURL != "" {
-		return chosen.DownloadURL
-	}
-	if dlReq.InfoHash != "" {
-		return "magnet:?xt=urn:btih:" + dlReq.InfoHash
-	}
-	return ""
 }
 
 // resolveSavePathAndCategory returns the qBittorrent save path and category for a book type.
