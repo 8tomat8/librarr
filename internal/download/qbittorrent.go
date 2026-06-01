@@ -1,6 +1,8 @@
 package download
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -202,12 +204,53 @@ func (q *QBittorrentClient) AddTorrent(torrentURL, title, savePath, category str
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
-	if string(body) != "Ok." {
-		return fmt.Errorf("add torrent failed: %s", string(body))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("add torrent HTTP %d: %s", resp.StatusCode, string(body))
+	}
+
+	if err := parseQBittorrentAddTorrentResponse(body); err != nil {
+		return fmt.Errorf("add torrent failed: %s", err.Error())
 	}
 
 	slog.Info("torrent added to qBittorrent", "title", title)
 	return nil
+}
+
+type qbittorrentAddTorrentResponse struct {
+	AddedTorrentIDs []string `json:"added_torrent_ids"`
+	SuccessCount    int      `json:"success_count"`
+	FailureCount    int      `json:"failure_count"`
+	PendingCount    int      `json:"pending_count"`
+	Error           string   `json:"error"`
+}
+
+func parseQBittorrentAddTorrentResponse(body []byte) error {
+	trimmed := strings.TrimSpace(string(body))
+	if trimmed == "" || trimmed == "Ok." {
+		return nil
+	}
+
+	var parsed qbittorrentAddTorrentResponse
+	if err := json.Unmarshal(body, &parsed); err == nil {
+		if parsed.SuccessCount > 0 || len(parsed.AddedTorrentIDs) > 0 {
+			if parsed.FailureCount > 0 {
+				slog.Warn("qBittorrent add torrent completed with partial failures",
+					"success_count", parsed.SuccessCount,
+					"failure_count", parsed.FailureCount,
+					"pending_count", parsed.PendingCount,
+				)
+			}
+			return nil
+		}
+		if parsed.Error != "" {
+			return errors.New(parsed.Error)
+		}
+		if parsed.FailureCount > 0 {
+			return fmt.Errorf("success_count=%d failure_count=%d pending_count=%d", parsed.SuccessCount, parsed.FailureCount, parsed.PendingCount)
+		}
+	}
+
+	return errors.New(trimmed)
 }
 
 // TorrentInfo represents a torrent from the qBittorrent API.
