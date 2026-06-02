@@ -141,7 +141,8 @@ func ResolveABBMagnet(ctx context.Context, client *http.Client, userAgent, abbPa
 	}
 	_ = userAgent // retained for API compatibility; ABB now uses a browser-like header set.
 
-	infoHashRe := regexp.MustCompile(`(?i)Info\s*Hash:.*?<td[^>]*>\s*([0-9a-fA-F]{40})`)
+	infoHashRe := regexp.MustCompile(`(?i)Info\s*Hash:[^\r\n]*?(?:<td[^>]*>)?\s*([0-9a-fA-F]{40})`)
+	hashRe := regexp.MustCompile(`(?i)\b[0-9a-f]{40}\b`)
 	trackerRe := regexp.MustCompile(`<td>((?:udp|http)://[^<]+)</td>`)
 	titleRe := regexp.MustCompile(`<h1[^>]*>(.*?)</h1>`)
 
@@ -166,12 +167,14 @@ func ResolveABBMagnet(ctx context.Context, client *http.Client, userAgent, abbPa
 		}
 
 		htmlContent, _ := doc.Html()
-
-		hashMatch := infoHashRe.FindStringSubmatch(htmlContent)
-		if len(hashMatch) < 2 {
-			continue
+		infoHash := extractABBInfoHash(doc, hashRe)
+		if infoHash == "" {
+			hashMatch := infoHashRe.FindStringSubmatch(htmlContent)
+			if len(hashMatch) < 2 {
+				continue
+			}
+			infoHash = hashMatch[1]
 		}
-		infoHash := hashMatch[1]
 
 		// Extract trackers.
 		trackers := trackerRe.FindAllStringSubmatch(htmlContent, -1)
@@ -208,6 +211,31 @@ func ResolveABBMagnet(ctx context.Context, client *http.Client, userAgent, abbPa
 		return magnet, nil
 	}
 	return "", fmt.Errorf("failed to resolve ABB magnet from all domains")
+}
+
+func extractABBInfoHash(doc *goquery.Document, hashRe *regexp.Regexp) string {
+	var infoHash string
+
+	doc.Find("tr").EachWithBreak(func(_ int, row *goquery.Selection) bool {
+		cells := row.Find("td")
+		if cells.Length() < 2 {
+			return true
+		}
+
+		label := strings.ToLower(strings.TrimSpace(cells.First().Text()))
+		if !strings.Contains(label, "info hash") {
+			return true
+		}
+
+		value := strings.TrimSpace(cells.Eq(1).Text())
+		if match := hashRe.FindString(value); match != "" {
+			infoHash = match
+			return false
+		}
+		return true
+	})
+
+	return infoHash
 }
 
 func setABBRequestHeaders(req *http.Request) {
