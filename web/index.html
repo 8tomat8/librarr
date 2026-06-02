@@ -1836,6 +1836,7 @@ async function startDownload(result) {
     const body = {
       title: result.title,
       download_url: result.download_url || result.url || '',
+      abb_url: result.abb_url || '',
       source: result.source,
       md5: result.md5 || '',
       author: result.author || '',
@@ -2956,4 +2957,3 @@ init();
 </script>
 </body>
 </html>
-

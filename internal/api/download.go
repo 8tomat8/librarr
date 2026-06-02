@@ -1,12 +1,16 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	neturl "net/url"
 	"strings"
+	"time"
 
 	"github.com/JeremiahM37/librarr/internal/models"
+	"github.com/JeremiahM37/librarr/internal/search"
 )
 
 func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
@@ -27,6 +31,21 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 	s.db.LogActivity(username, "download_start", req.Title, fmt.Sprintf("Download started from %s", req.Source))
 
 	source := s.searchMgr.GetSource(req.Source)
+	if req.MediaType == "" {
+		if source != nil {
+			switch source.SearchTab() {
+			case "audiobook", "manga":
+				req.MediaType = source.SearchTab()
+			}
+		} else {
+			switch req.Source {
+			case "audiobook":
+				req.MediaType = "audiobook"
+			case "prowlarr_manga":
+				req.MediaType = "manga"
+			}
+		}
+	}
 
 	// Determine download type.
 	downloadType := "direct"
@@ -44,13 +63,13 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 
 	switch downloadType {
 	case "torrent":
-		s.handleTorrentDownload(w, req)
+		s.handleTorrentDownload(w, r, req)
 	default:
 		s.handleDirectDownloadReq(w, req)
 	}
 }
 
-func (s *Server) handleTorrentDownload(w http.ResponseWriter, req models.DownloadRequest) {
+func (s *Server) handleTorrentDownload(w http.ResponseWriter, r *http.Request, req models.DownloadRequest) {
 	if !s.cfg.HasQBittorrent() {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
 			"success": false,
@@ -59,7 +78,14 @@ func (s *Server) handleTorrentDownload(w http.ResponseWriter, req models.Downloa
 		return
 	}
 
-	url := resolveTorrentURL(req)
+	url, err := s.resolveTorrentURL(r.Context(), req, models.SearchResult{})
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"success": false,
+			"error":   fmt.Sprintf("Failed to resolve AudioBookBay download: %v", err),
+		})
+		return
+	}
 	if url == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
 			"success": false,
@@ -90,7 +116,7 @@ func (s *Server) handleTorrentDownload(w http.ResponseWriter, req models.Downloa
 		category = s.cfg.QBMangaCategory
 	}
 
-	err := s.downloadMgr.StartTorrentDownload(url, req.Title, savePath, category)
+	err = s.downloadMgr.StartTorrentDownload(url, req.Title, savePath, category)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"success": err == nil,
 		"title":   req.Title,
@@ -173,7 +199,7 @@ func (s *Server) handleDownloadTorrent(w http.ResponseWriter, r *http.Request) {
 		req.Title = "Unknown"
 	}
 	req.MediaType = "ebook"
-	s.handleTorrentDownload(w, req)
+	s.handleTorrentDownload(w, r, req)
 }
 
 func (s *Server) handleDownloadAnnas(w http.ResponseWriter, r *http.Request) {
@@ -202,7 +228,7 @@ func (s *Server) handleDownloadAudiobook(w http.ResponseWriter, r *http.Request)
 		req.Title = "Unknown"
 	}
 	req.MediaType = "audiobook"
-	s.handleTorrentDownload(w, req)
+	s.handleTorrentDownload(w, r, req)
 }
 
 func (s *Server) handleGetDownloads(w http.ResponseWriter, _ *http.Request) {
@@ -256,22 +282,6 @@ func (s *Server) handleCheckDuplicate(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func resolveTorrentURL(req models.DownloadRequest) string {
-	if req.DownloadURL != "" {
-		return req.DownloadURL
-	}
-	if strings.HasPrefix(req.GUID, "magnet:") {
-		return req.GUID
-	}
-	if req.MagnetURL != "" {
-		return req.MagnetURL
-	}
-	if req.InfoHash != "" {
-		return fmt.Sprintf("magnet:?xt=urn:btih:%s", req.InfoHash)
-	}
-	return ""
-}
-
 func extractSourceID(req models.DownloadRequest) string {
 	if req.MD5 != "" {
 		return req.MD5
@@ -286,6 +296,92 @@ func extractSourceID(req models.DownloadRequest) string {
 		return req.URL
 	}
 	return ""
+}
+
+var resolveABBMagnetFn = search.ResolveABBMagnet
+
+func (s *Server) resolveTorrentURL(ctx context.Context, req models.DownloadRequest, chosen models.SearchResult) (string, error) {
+	if req.DownloadURL != "" {
+		return req.DownloadURL, nil
+	}
+	if strings.HasPrefix(req.GUID, "magnet:") {
+		return req.GUID, nil
+	}
+	if req.MagnetURL != "" {
+		return req.MagnetURL, nil
+	}
+	if chosen.MagnetURL != "" {
+		return chosen.MagnetURL, nil
+	}
+	if chosen.DownloadURL != "" {
+		return chosen.DownloadURL, nil
+	}
+	if req.InfoHash != "" {
+		return fmt.Sprintf("magnet:?xt=urn:btih:%s", req.InfoHash), nil
+	}
+
+	abbPath := req.AbbURL
+	if abbPath == "" {
+		abbPath = chosen.AbbURL
+	}
+	if abbPath == "" {
+		return "", nil
+	}
+
+	resolved, err := s.resolveABBMagnet(ctx, abbPath)
+	if err != nil {
+		return "", err
+	}
+	return resolved, nil
+}
+
+func (s *Server) resolveABBMagnet(ctx context.Context, abbURL string) (string, error) {
+	if s.cfg == nil || s.cfg.Sources == nil {
+		return "", fmt.Errorf("AudioBookBay sources not configured")
+	}
+
+	abbPath := normalizeABBPath(abbURL)
+	if abbPath == "" {
+		return "", fmt.Errorf("invalid AudioBookBay URL")
+	}
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	return resolveABBMagnetFn(ctx, client, s.cfg.UserAgent, abbPath, s.cfg.Sources.AudioBookBay.Mirrors, s.cfg.Sources.AudioBookBay.Trackers)
+}
+
+func normalizeABBPath(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	if strings.HasPrefix(raw, "/") {
+		return raw
+	}
+
+	u, err := neturl.Parse(raw)
+	if err != nil {
+		if strings.HasPrefix(raw, "http://") || strings.HasPrefix(raw, "https://") {
+			return ""
+		}
+		return "/" + strings.TrimLeft(raw, "/")
+	}
+	if u.Scheme == "" && u.Host == "" {
+		if strings.HasPrefix(u.Path, "/") {
+			if u.RawQuery != "" {
+				return u.Path + "?" + u.RawQuery
+			}
+			return u.Path
+		}
+		return "/" + strings.TrimLeft(u.Path, "/")
+	}
+	path := u.EscapedPath()
+	if path == "" {
+		path = "/"
+	}
+	if u.RawQuery != "" {
+		path += "?" + u.RawQuery
+	}
+	return path
 }
 
 func errString(err error) string {
