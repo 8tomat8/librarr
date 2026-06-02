@@ -356,11 +356,14 @@ tailwind.config = {
       <div class="flex items-center justify-between mb-6">
         <h2 class="text-lg font-semibold text-white" data-i18n="downloads_title">Downloads</h2>
         <div class="flex gap-2">
-          <button onclick="refreshDownloads()" class="px-3 py-1.5 text-sm bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-colors flex items-center gap-1.5">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+          <button id="downloads-refresh-btn" onclick="refreshDownloads(true)" class="px-3 py-1.5 text-sm bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-colors flex items-center gap-1.5">
+            <svg id="downloads-refresh-icon" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
             <span data-i18n="refresh">Refresh</span>
           </button>
-          <button onclick="clearCompleted()" class="px-3 py-1.5 text-sm bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-colors" data-i18n="clear_completed">Clear Completed</button>
+          <button id="downloads-clear-btn" onclick="clearCompleted()" class="px-3 py-1.5 text-sm bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-colors flex items-center gap-1.5">
+            <svg id="downloads-clear-icon" class="w-4 h-4 hidden spin" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle class="opacity-25" cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"></circle><path class="opacity-90" fill="currentColor" d="M12 3a9 9 0 0 1 9 9h-2.5A6.5 6.5 0 0 0 12 5.5V3z"></path></svg>
+            <span data-i18n="clear_completed">Clear Completed</span>
+          </button>
         </div>
       </div>
 
@@ -832,6 +835,8 @@ const I18N = {
     no_results: 'No results found',
     no_results_hint: 'Try different keywords or check your spelling',
     download: 'Download',
+    download_added: 'Added',
+    download_failed_state: 'Failed',
     search_failed: 'Search failed: {msg}',
     n_seeds: '{n} seed',
     n_leech: '{n} leech',
@@ -1024,6 +1029,8 @@ const I18N = {
     no_results: 'Ничего не найдено',
     no_results_hint: 'Попробуйте другие ключевые слова или проверьте написание',
     download: 'Скачать',
+    download_added: 'Добавлено',
+    download_failed_state: 'Ошибка',
     search_failed: 'Ошибка поиска: {msg}',
     n_seeds: '{n} сид.',
     n_leech: '{n} лич.',
@@ -1222,6 +1229,11 @@ const state = {
   searchTab: 'ebooks',
   libraryTab: 'ebooks',
   searchResults: [],
+  pendingDownloads: new Set(),
+  downloadOutcomes: new Map(),
+  downloadOutcomeTimers: new Map(),
+  downloadJobs: [],
+  pendingRetryDownloads: new Set(),
   sortMode: 'relevance',
   libraryPage: 1,
   libraryPages: 1,
@@ -1772,6 +1784,9 @@ function renderSearchResults() {
 
 function renderBookCard(result, index) {
   const src = SOURCE_COLORS[result.source] || { bg: '#475569', text: 'white', label: result.source || 'Unknown' };
+  const downloadKey = getDownloadKey(result);
+  const isDownloading = state.pendingDownloads.has(downloadKey);
+  const downloadOutcome = state.downloadOutcomes.get(downloadKey);
   const coverHtml = result.cover_url
     ? `<img src="${escapeHtml(result.cover_url)}" alt="" class="w-full h-48 object-cover" loading="lazy" onerror="this.outerHTML=makePlaceholder('${escapeHtml(result.title || '')}', ${index})">`
     : makePlaceholderHtml(result.title || '?', index);
@@ -1782,6 +1797,26 @@ function renderBookCard(result, index) {
   const size = sizeText ? `<span class="text-slate-400 text-xs font-medium">${escapeHtml(sizeText)}</span>` : '';
   const format = result.format ? `<span class="text-slate-500 text-xs uppercase">${escapeHtml(result.format)}</span>` : '';
   const indexer = result.indexer ? `<span class="text-slate-600 text-xs">${escapeHtml(result.indexer)}</span>` : '';
+
+  const buttonState = isDownloading ? 'loading' : (downloadOutcome ? downloadOutcome.status : 'idle');
+  const buttonStyles = {
+    idle: 'bg-indigo-600 hover:bg-indigo-500 text-white',
+    loading: 'bg-indigo-500/70 text-white cursor-not-allowed',
+    success: 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-default',
+    error: 'bg-rose-600 hover:bg-rose-500 text-white cursor-pointer',
+  };
+  const buttonText = {
+    idle: t('download'),
+    loading: t('loading'),
+    success: t('download_added'),
+    error: t('download_failed_state'),
+  };
+  const buttonIcon = {
+    idle: `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>`,
+    loading: `<svg class="w-4 h-4 spin" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle class="opacity-25" cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"></circle><path class="opacity-90" fill="currentColor" d="M12 3a9 9 0 0 1 9 9h-2.5A6.5 6.5 0 0 0 12 5.5V3z"></path></svg>`,
+    success: `<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>`,
+    error: `<svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 8v4m0 4h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z"/></svg>`,
+  };
 
   return `
     <div class="book-card bg-slate-900 rounded-xl overflow-hidden border border-slate-800 hover:border-slate-600 flex flex-col">
@@ -1795,9 +1830,13 @@ function renderBookCard(result, index) {
         <div class="flex items-center gap-2 flex-wrap mt-auto mb-2">
           ${seeders}${leechers}${size}${format}${indexer}
         </div>
-        <button onclick='startDownload(${JSON.stringify(result).replace(/'/g, "&#39;")})' class="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium py-1.5 rounded-lg transition-colors flex items-center justify-center gap-1.5">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
-          ${t('download')}
+        <button
+          onclick='startDownload(${JSON.stringify(result).replace(/'/g, "&#39;")})'
+          ${buttonState === 'idle' || buttonState === 'error' ? '' : 'disabled aria-busy="true"'}
+          class="w-full ${buttonStyles[buttonState] || buttonStyles.idle} text-white text-sm font-medium py-1.5 rounded-lg transition-colors flex items-center justify-center gap-1.5 disabled:opacity-100"
+        >
+          ${buttonIcon[buttonState] || buttonIcon.idle}
+          ${buttonText[buttonState] || buttonText.idle}
         </button>
       </div>
     </div>
@@ -1828,10 +1867,45 @@ function formatSize(size) {
   return '';
 }
 
+function getDownloadKey(result) {
+  return [
+    result.source || '',
+    result.download_url || '',
+    result.url || '',
+    result.abb_url || '',
+    result.info_hash || '',
+    result.magnet || '',
+    result.md5 || '',
+    result.title || '',
+    result.author || '',
+  ].join('|');
+}
+
+function setDownloadOutcome(downloadKey, status) {
+  const prevTimer = state.downloadOutcomeTimers.get(downloadKey);
+  if (prevTimer) clearTimeout(prevTimer);
+
+  state.downloadOutcomes.set(downloadKey, { status });
+  renderSearchResults();
+
+  const timer = setTimeout(() => {
+    state.downloadOutcomes.delete(downloadKey);
+    state.downloadOutcomeTimers.delete(downloadKey);
+    renderSearchResults();
+  }, 2500);
+  state.downloadOutcomeTimers.set(downloadKey, timer);
+}
+
 // ============================================================
 // DOWNLOAD
 // ============================================================
 async function startDownload(result) {
+  const downloadKey = getDownloadKey(result);
+  if (state.pendingDownloads.has(downloadKey)) return;
+
+  state.pendingDownloads.add(downloadKey);
+  renderSearchResults();
+
   try {
     const body = {
       title: result.title,
@@ -1850,57 +1924,97 @@ async function startDownload(result) {
     });
 
     if (data.success || data.job_id) {
+      setDownloadOutcome(downloadKey, 'success');
       showToast(t('download_started', {title: result.title}), 'success');
     } else {
+      setDownloadOutcome(downloadKey, 'error');
       showToast(t('download_failed', {msg: data.error || t('unknown_error')}), 'error');
     }
   } catch (err) {
     if (err.message !== 'Unauthorized') {
+      setDownloadOutcome(downloadKey, 'error');
       showToast(t('download_failed', {msg: err.message}), 'error');
     }
+  } finally {
+    state.pendingDownloads.delete(downloadKey);
+    renderSearchResults();
   }
 }
 
-async function refreshDownloads() {
+function setDownloadsRefreshLoading(loading) {
+  const button = document.getElementById('downloads-refresh-btn');
+  const icon = document.getElementById('downloads-refresh-icon');
+  if (!button || !icon) return;
+
+  button.disabled = loading;
+  if (loading) {
+    button.setAttribute('aria-busy', 'true');
+    icon.classList.add('spin');
+  } else {
+    button.removeAttribute('aria-busy');
+    icon.classList.remove('spin');
+  }
+}
+
+async function refreshDownloads(manual = false) {
+  if (manual) setDownloadsRefreshLoading(true);
+
   try {
     const data = await apiJson('/api/downloads');
-    const jobs = data.jobs || [];
-    const container = document.getElementById('downloads-list');
-    const emptyEl = document.getElementById('downloads-empty');
-
-    // Update badge
-    const activeCount = jobs.filter(j => j.status === 'downloading' || j.status === 'queued' || j.status === 'searching' || j.status === 'organizing' || j.status === 'importing').length;
-    const badge = document.getElementById('dl-badge');
-    if (activeCount > 0) {
-      badge.textContent = activeCount;
-      badge.classList.remove('hidden');
-    } else {
-      badge.classList.add('hidden');
-    }
-
-    if (jobs.length === 0) {
-      container.innerHTML = '';
-      emptyEl.classList.remove('hidden');
-      return;
-    }
-
-    emptyEl.classList.add('hidden');
-    container.innerHTML = jobs.map(renderDownloadJob).join('');
+    state.downloadJobs = data.jobs || [];
+    renderDownloadList();
   } catch (err) {
     if (err.message !== 'Unauthorized') {
       showToast(t('failed_load_downloads'), 'error');
     }
+  } finally {
+    if (manual) setDownloadsRefreshLoading(false);
   }
+}
+
+function renderDownloadList() {
+  const jobs = state.downloadJobs || [];
+  const container = document.getElementById('downloads-list');
+  const emptyEl = document.getElementById('downloads-empty');
+
+  // Update badge
+  const activeCount = jobs.filter(j => j.status === 'downloading' || j.status === 'queued' || j.status === 'searching' || j.status === 'organizing' || j.status === 'importing').length;
+  const badge = document.getElementById('dl-badge');
+  if (activeCount > 0) {
+    badge.textContent = activeCount;
+    badge.classList.remove('hidden');
+  } else {
+    badge.classList.add('hidden');
+  }
+
+  if (jobs.length === 0) {
+    container.innerHTML = '';
+    emptyEl.classList.remove('hidden');
+    return;
+  }
+
+  emptyEl.classList.add('hidden');
+  container.innerHTML = jobs.map(renderDownloadJob).join('');
 }
 
 function renderDownloadJob(job) {
   const st = STATUS_STYLES[job.status] || STATUS_STYLES.queued;
   const progress = job.progress || 0;
   const showProgress = job.status === 'downloading' && progress > 0;
+  const retryKey = String(job.job_id);
+  const retryPending = state.pendingRetryDownloads.has(retryKey);
 
   let actions = '';
   if (job.status === 'error' || job.status === 'dead_letter') {
-    actions = `<button onclick="retryDownload('${escapeHtml(job.job_id)}')" class="px-2.5 py-1 text-xs bg-slate-700 hover:bg-slate-600 text-slate-300 rounded transition-colors">${t('retry')}</button>`;
+    actions = `
+      <button
+        onclick="retryDownload('${escapeHtml(job.job_id)}')"
+        ${retryPending ? 'disabled aria-busy="true"' : ''}
+        class="px-2.5 py-1 text-xs bg-slate-700 hover:bg-slate-600 text-slate-300 rounded transition-colors flex items-center gap-1 disabled:opacity-100"
+      >
+        ${retryPending ? '<svg class="w-3.5 h-3.5 spin" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle class="opacity-25" cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"></circle><path class="opacity-90" fill="currentColor" d="M12 3a9 9 0 0 1 9 9h-2.5A6.5 6.5 0 0 0 12 5.5V3z"></path></svg>' : ''}
+        <span>${retryPending ? t('loading') : t('retry')}</span>
+      </button>`;
   }
 
   return `
@@ -1928,22 +2042,45 @@ function renderDownloadJob(job) {
 }
 
 async function retryDownload(jobId) {
+  const key = String(jobId);
+  if (state.pendingRetryDownloads.has(key)) return;
+
+  state.pendingRetryDownloads.add(key);
+  renderDownloadList();
+
   try {
     await apiJson(`/api/downloads/jobs/${jobId}/retry`, { method: 'POST' });
     showToast(t('retrying_download'), 'info');
-    refreshDownloads();
+    await refreshDownloads();
   } catch (err) {
     if (err.message !== 'Unauthorized') showToast(t('retry_failed'), 'error');
+  } finally {
+    state.pendingRetryDownloads.delete(key);
+    renderDownloadList();
   }
 }
 
 async function clearCompleted() {
+  const button = document.getElementById('downloads-clear-btn');
+  const icon = document.getElementById('downloads-clear-icon');
+  if (button && icon) {
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
+    icon.classList.remove('hidden');
+  }
+
   try {
     await apiJson('/api/downloads/clear', { method: 'POST' });
     showToast(t('cleared_completed'), 'success');
-    refreshDownloads();
+    await refreshDownloads();
   } catch (err) {
     if (err.message !== 'Unauthorized') showToast(t('failed_clear'), 'error');
+  } finally {
+    if (button && icon) {
+      button.disabled = false;
+      button.removeAttribute('aria-busy');
+      icon.classList.add('hidden');
+    }
   }
 }
 
