@@ -167,7 +167,7 @@ func (p *Prowlarr) doSearch(ctx context.Context, params prowlarrSearchParams) ([
 	for _, item := range items {
 		source := "torrent"
 		if p.tab == "audiobook" {
-			source = "audiobook"
+			source = "prowlarr_audiobooks"
 		} else if p.tab == "manga" {
 			source = "prowlarr_manga"
 		}
