@@ -213,9 +213,12 @@ func authMiddleware(cfg *config.Config, database *db.DB, sessions *SessionStore,
 		userCount, _ := database.CountUsers()
 		multiUser := userCount > 0
 
-		// If no multi-user and no legacy auth, pass through.
+		// Open install with no auth configured: grant admin so settings and other
+		// requireAdmin endpoints remain usable (otherwise every admin route 403s).
 		if !multiUser && !cfg.HasAuth() && !cfg.HasAPIKey() {
-			next.ServeHTTP(w, r)
+			ctx := context.WithValue(r.Context(), ctxUserRole, "admin")
+			ctx = context.WithValue(ctx, ctxUsername, "anonymous")
+			next.ServeHTTP(w, r.WithContext(ctx))
 			return
 		}
 
