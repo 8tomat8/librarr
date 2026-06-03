@@ -7,33 +7,68 @@ import (
 	"strings"
 )
 
-// ValidateOutboundURL checks that rawURL is a safe http(s) target for server-side
-// requests. It rejects loopback, private, link-local, and metadata addresses.
-func ValidateOutboundURL(rawURL string) error {
+func parseHTTPURL(rawURL string) (*url.URL, error) {
 	if rawURL == "" {
-		return fmt.Errorf("URL is required")
+		return nil, fmt.Errorf("URL is required")
 	}
 	u, err := url.Parse(rawURL)
 	if err != nil {
-		return fmt.Errorf("invalid URL")
+		return nil, fmt.Errorf("invalid URL")
 	}
 	if u.Scheme != "http" && u.Scheme != "https" {
-		return fmt.Errorf("URL must use http or https")
+		return nil, fmt.Errorf("URL must use http or https")
 	}
-	host := u.Hostname()
-	if host == "" {
-		return fmt.Errorf("URL must include a host")
+	if u.Hostname() == "" {
+		return nil, fmt.Errorf("URL must include a host")
 	}
+	return u, nil
+}
 
+func isMetadataHost(host string) bool {
 	lower := strings.ToLower(host)
 	for _, blocked := range []string{
-		"localhost",
 		"metadata.google.internal",
 		"metadata.goog",
 	} {
 		if lower == blocked || strings.HasSuffix(lower, "."+blocked) {
-			return fmt.Errorf("URL targets a restricted host")
+			return true
 		}
+	}
+	return false
+}
+
+// ValidateIntegrationURL checks admin-initiated integration test URLs (Prowlarr,
+// Kavita, etc.). Private and loopback addresses are allowed — homelab services
+// commonly run at http://192.168.x.x:port or http://localhost:port.
+func ValidateIntegrationURL(rawURL string) error {
+	u, err := parseHTTPURL(rawURL)
+	if err != nil {
+		return err
+	}
+	if isMetadataHost(u.Hostname()) {
+		return fmt.Errorf("URL targets a restricted host")
+	}
+	if ip := net.ParseIP(u.Hostname()); ip != nil && isCloudMetadataIP(ip) {
+		return fmt.Errorf("URL targets a restricted address")
+	}
+	return nil
+}
+
+// ValidateOutboundURL checks that rawURL is a safe http(s) target for server-side
+// requests. It rejects loopback, private, link-local, and metadata addresses.
+func ValidateOutboundURL(rawURL string) error {
+	u, err := parseHTTPURL(rawURL)
+	if err != nil {
+		return err
+	}
+	host := u.Hostname()
+
+	lower := strings.ToLower(host)
+	if lower == "localhost" || strings.HasSuffix(lower, ".localhost") {
+		return fmt.Errorf("URL targets a restricted host")
+	}
+	if isMetadataHost(host) {
+		return fmt.Errorf("URL targets a restricted host")
 	}
 
 	if ip := net.ParseIP(host); ip != nil {
@@ -57,13 +92,15 @@ func ValidateOutboundURL(rawURL string) error {
 	return nil
 }
 
+func isCloudMetadataIP(ip net.IP) bool {
+	ip4 := ip.To4()
+	return ip4 != nil && ip4[0] == 169 && ip4[1] == 254
+}
+
 func isRestrictedIP(ip net.IP) bool {
 	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
 		ip.IsPrivate() || ip.IsUnspecified() {
 		return true
 	}
-	if ip4 := ip.To4(); ip4 != nil && ip4[0] == 169 && ip4[1] == 254 {
-		return true
-	}
-	return false
+	return isCloudMetadataIP(ip)
 }

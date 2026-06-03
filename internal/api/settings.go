@@ -177,10 +177,10 @@ func (s *Server) loadSettings() map[string]interface{} {
 	return settings
 }
 
-// validateTestURL checks that a URL provided for connection testing is safe
-// (not targeting internal metadata services, localhost, private networks, etc.).
+// validateTestURL checks integration test URLs (admin-only). Homelab services
+// on LAN IPs and localhost are allowed; cloud metadata endpoints are not.
 func validateTestURL(rawURL string) error {
-	return netutil.ValidateOutboundURL(rawURL)
+	return netutil.ValidateIntegrationURL(rawURL)
 }
 
 // handleTestProwlarr actually tests the Prowlarr API connection.

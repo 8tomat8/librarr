@@ -45,7 +45,7 @@ Findings are grouped by severity. **Fixed** indicates a code change is present o
 |---|---|
 | **Files** | `internal/api/settings.go` |
 | **Scenario** | Prowlarr connection test accepted `localhost` / private IPs via prefix-only blocklist. |
-| **Fix** | **Fixed** — shared `netutil.ValidateOutboundURL` with DNS/IP checks; applied to Prowlarr, Audiobookshelf, Kavita tests. |
+| **Fix** | **Fixed** — connection tests use `ValidateIntegrationURL` (allows LAN/localhost for homelab); strict `ValidateOutboundURL` kept for user-supplied download URLs. |
 
 ### H3: OPDS library exposure without auth
 
@@ -183,9 +183,9 @@ No DB column for OIDC `sub` yet; username collision possible across IdP changes.
 
 No passwords/API keys found in slog calls. OIDC errors log generic messages.
 
-### L6: Homelab integration test URLs blocked
+### L6: Homelab integration test URLs
 
-Connection-test endpoints reject localhost and private IPs (SSRF hardening). URLs can still be saved and used at runtime; only the **Test Connection** button is affected for same-host Docker/homelab setups.
+Connection tests use `ValidateIntegrationURL`, which allows private IPs and localhost (typical homelab: `http://192.168.x.x:port`). Cloud metadata endpoints remain blocked. User-supplied download URLs still use strict SSRF validation.
 
 ---
 
@@ -216,5 +216,4 @@ The review stack added the following beyond the initial security pass:
 - Dedicated rate limit for `/api/login/totp`
 - Full webhook worker pool (semaphore cap is in place)
 - Dial-time IP validation to close DNS rebinding gap
-- Homelab-friendly integration connection tests (optional config to allow private IPs for admin-initiated tests only)
 - OPDS Basic Auth for protected catalogs

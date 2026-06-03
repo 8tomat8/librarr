@@ -78,21 +78,29 @@ func TestValidateAllowedPath_AllowsInsideRoot(t *testing.T) {
 	}
 }
 
-func TestValidateTestURL_BlocksLocalhost(t *testing.T) {
+func TestValidateTestURL_AllowsHomelabHosts(t *testing.T) {
 	cases := []string{
 		"http://127.0.0.1:8080",
-		"http://localhost/api",
+		"http://localhost:9696",
+		"http://192.168.70.100:1111",
 		"http://10.0.0.1/",
+		"https://prowlarr.example:9696",
+	}
+	for _, u := range cases {
+		if err := validateTestURL(u); err != nil {
+			t.Errorf("validateTestURL(%q) should pass for homelab integration tests, got %v", u, err)
+		}
+	}
+}
+
+func TestValidateTestURL_BlocksMetadata(t *testing.T) {
+	cases := []string{
+		"http://metadata.google.internal/",
+		"http://169.254.169.254/latest/meta-data/",
 	}
 	for _, u := range cases {
 		if err := validateTestURL(u); err == nil {
 			t.Errorf("validateTestURL(%q) should fail", u)
 		}
-	}
-}
-
-func TestValidateTestURL_AllowsPublicHost(t *testing.T) {
-	if err := validateTestURL("https://prowlarr.example:9696"); err != nil {
-		t.Errorf("expected public host to pass, got %v", err)
 	}
 }
