@@ -146,8 +146,9 @@ type Config struct {
 	OIDCClientID        string
 	OIDCClientSecret    string
 	OIDCRedirectURI     string
-	OIDCAutoCreateUsers bool
-	OIDCDefaultRole     string
+	OIDCAutoCreateUsers       bool
+	OIDCDefaultRole           string
+	OIDCRequireEmailVerified  bool
 
 	// Deluge
 	DelugeURL      string
@@ -362,8 +363,9 @@ func buildFromEnv() *Config {
 		OIDCClientID:        getEnv("OIDC_CLIENT_ID", ""),
 		OIDCClientSecret:    getEnv("OIDC_CLIENT_SECRET", ""),
 		OIDCRedirectURI:     getEnv("OIDC_REDIRECT_URI", ""),
-		OIDCAutoCreateUsers: getEnvBool("OIDC_AUTO_CREATE_USERS", true),
-		OIDCDefaultRole:     getEnv("OIDC_DEFAULT_ROLE", "user"),
+		OIDCAutoCreateUsers:      getEnvBool("OIDC_AUTO_CREATE_USERS", true),
+		OIDCDefaultRole:          getEnv("OIDC_DEFAULT_ROLE", "user"),
+		OIDCRequireEmailVerified: getEnvBool("OIDC_REQUIRE_EMAIL_VERIFIED", true),
 
 		DelugeURL:      getEnv("DELUGE_URL", ""),
 		DelugePassword: getEnv("DELUGE_PASSWORD", ""),

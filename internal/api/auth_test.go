@@ -198,7 +198,11 @@ func TestIsExempt(t *testing.T) {
 		{"/torznab/api?t=caps", true},
 		{"/static/style.css", true},
 		{"/opds", true},
-		{"/opds/books", true},
+		{"/opds/", true},
+		{"/opds/opensearch.xml", true},
+		{"/opds/books", false},
+		{"/opds/search", false},
+		{"/opds/download/1", false},
 		{"/metrics", true},
 		{"/auth/oidc/callback", true},
 		// OpenAPI spec is public so AI agents / tooling can introspect the
@@ -312,5 +316,36 @@ func TestHandleAuthStatus_OIDCHints(t *testing.T) {
 				t.Errorf("oidc_provider_name MUST be absent when OIDC is disabled, got %v", resp["oidc_provider_name"])
 			}
 		})
+	}
+}
+
+func TestAuthMiddleware_NoAuthGrantsAdmin(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.New(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { database.Close() })
+
+	cfg := &config.Config{}
+	sessions := NewSessionStore()
+
+	var gotRole string
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotRole, _ = r.Context().Value(ctxUserRole).(string)
+		w.WriteHeader(http.StatusOK)
+	})
+
+	handler := authMiddleware(cfg, database, sessions, requireAdmin(inner))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/settings", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+	if gotRole != "admin" {
+		t.Errorf("expected admin role in context, got %q", gotRole)
 	}
 }

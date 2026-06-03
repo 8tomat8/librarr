@@ -241,6 +241,12 @@ func (h *OIDCHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.cfg.OIDCRequireEmailVerified && claims.Email != "" && !claims.EmailVerified {
+		slog.Warn("OIDC login rejected: email not verified", "email", claims.Email)
+		http.Error(w, "Email address is not verified", http.StatusForbidden)
+		return
+	}
+
 	slog.Info("OIDC login", "username", username, "email", claims.Email, "sub", claims.Sub)
 
 	// Find or create user.
@@ -284,14 +290,7 @@ func (h *OIDCHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	h.db.UpdateLastLogin(user.ID)
 	sessionToken := h.sessions.Create(user.ID, user.Username, user.Role)
 
-	http.SetCookie(w, &http.Cookie{
-		Name:     "librarr_session",
-		Value:    sessionToken,
-		Path:     "/",
-		MaxAge:   86400,
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-	})
+	http.SetCookie(w, sessionCookie(r, sessionToken, 86400))
 
 	// Redirect to app root.
 	http.Redirect(w, r, "/", http.StatusFound)
