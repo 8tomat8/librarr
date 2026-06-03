@@ -49,12 +49,16 @@ type Sender struct {
 	client  *http.Client
 	configs []Config
 	mu      sync.RWMutex
+	sem     chan struct{}
 }
+
+const maxConcurrentWebhooks = 10
 
 // NewSender creates a new webhook sender.
 func NewSender() *Sender {
 	return &Sender{
 		client: &http.Client{Timeout: 10 * time.Second},
+		sem:    make(chan struct{}, maxConcurrentWebhooks),
 	}
 }
 
@@ -90,7 +94,15 @@ func (s *Sender) Send(payload Payload) {
 		if cfg.Events != "*" && !eventMatches(cfg.Events, string(payload.Event)) {
 			continue
 		}
-		go s.send(cfg, payload)
+		go func(c Config) {
+			select {
+			case s.sem <- struct{}{}:
+				defer func() { <-s.sem }()
+				s.send(c, payload)
+			default:
+				slog.Warn("webhook delivery skipped: concurrency limit reached", "url", c.URL)
+			}
+		}(cfg)
 	}
 }
 

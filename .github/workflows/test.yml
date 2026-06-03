@@ -25,6 +25,12 @@ jobs:
         run: go build -o librarr ./cmd/librarr/
       - name: go test (race)
         run: go test ./... -v -count=1 -race
+      - name: go test fuzz (short)
+        run: |
+          go test ./internal/search/ -run='^$' -fuzz=Fuzz -fuzztime=30s -count=1
+          go test ./internal/api/ -run='^$' -fuzz=Fuzz -fuzztime=30s -count=1
+      - name: go test integration
+        run: go test -tags=integration ./internal/integration/... -v -count=1 -race
       - name: go vet
         run: go vet ./...
       - name: staticcheck

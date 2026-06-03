@@ -288,7 +288,12 @@ func (h *OIDCHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 
 	// Create session.
 	h.db.UpdateLastLogin(user.ID)
-	sessionToken := h.sessions.Create(user.ID, user.Username, user.Role)
+	sessionToken, err := h.sessions.Create(user.ID, user.Username, user.Role)
+	if err != nil {
+		slog.Error("failed to create OIDC session", "error", err)
+		http.Error(w, "Failed to create session", http.StatusInternalServerError)
+		return
+	}
 
 	http.SetCookie(w, sessionCookie(r, sessionToken, 86400))
 

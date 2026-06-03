@@ -217,6 +217,11 @@ func (d *DirectDownloader) downloadFile(fileURL, title string, progressFn func(s
 // detectFileExtension inspects the first bytes of a file and returns the
 // appropriate extension for its actual content. Returns "" if the format
 // is not recognized (caller should keep the original extension).
+// DetectFileExtension inspects file magic bytes and returns an appropriate extension.
+func DetectFileExtension(path string) (string, error) {
+	return detectFileExtension(path)
+}
+
 func detectFileExtension(path string) (string, error) {
 	f, err := os.Open(path)
 	if err != nil {

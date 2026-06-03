@@ -47,9 +47,7 @@ func (s *Server) handleLibrary(w http.ResponseWriter, r *http.Request) {
 		if tagID > 0 {
 			tagItems, err := s.db.GetItemsByTag(tagID, limit, offset)
 			if err != nil {
-				writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
-					"error": err.Error(),
-				})
+				writeError(w, http.StatusInternalServerError, "Failed to load library items", err)
 				return
 			}
 			var tagJsonItems []map[string]interface{}
@@ -72,9 +70,7 @@ func (s *Server) handleLibrary(w http.ResponseWriter, r *http.Request) {
 
 	items, err := s.db.GetItems(mediaType, limit, offset)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
-			"error": err.Error(),
-		})
+		writeError(w, http.StatusInternalServerError, "Failed to load library items", err)
 		return
 	}
 
@@ -110,9 +106,7 @@ func (s *Server) serveLocalLibraryByMediaType(w http.ResponseWriter, r *http.Req
 
 	items, err := s.db.GetItems(mediaType, pageSize, offset)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
-			"error": err.Error(),
-		})
+		writeError(w, http.StatusInternalServerError, "Failed to load library items", err)
 		return
 	}
 	total, _ := s.db.CountItems(mediaType)
@@ -158,7 +152,7 @@ func (s *Server) handleLibraryEbooksFromABS(w http.ResponseWriter, r *http.Reque
 
 	req, err := http.NewRequest("GET", absURL+"?"+params.Encode(), nil)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{"error": err.Error()})
+		writeError(w, http.StatusInternalServerError, "Failed to load library items", err)
 		return
 	}
 	req.Header.Set("Authorization", "Bearer "+s.cfg.ABSToken)
@@ -231,9 +225,7 @@ func (s *Server) handleLibraryEbooksFromABS(w http.ResponseWriter, r *http.Reque
 func (s *Server) handleStats(w http.ResponseWriter, _ *http.Request) {
 	stats, err := s.db.GetStats()
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
-			"error": err.Error(),
-		})
+		writeError(w, http.StatusInternalServerError, "Failed to load library items", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, stats)
@@ -245,9 +237,7 @@ func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request) {
 
 	events, err := s.db.GetActivity(limit, offset)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
-			"error": err.Error(),
-		})
+		writeError(w, http.StatusInternalServerError, "Failed to load library items", err)
 		return
 	}
 

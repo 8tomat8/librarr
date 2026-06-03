@@ -1,6 +1,7 @@
 package download
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -26,9 +27,15 @@ type Manager struct {
 	targets       *organize.LibraryTargets
 	health        *search.HealthTracker
 	webhookSender *webhook.Sender
+	shutdown      context.Context
 
 	mu   sync.Mutex
 	jobs map[string]*models.DownloadJob
+}
+
+// SetShutdownContext ties background retry goroutines to server shutdown.
+func (m *Manager) SetShutdownContext(ctx context.Context) {
+	m.shutdown = ctx
 }
 
 // SetWebhookSender sets the webhook sender for download notifications.
@@ -140,6 +147,9 @@ var validTransitions = map[string]map[string]bool{
 }
 
 func (m *Manager) updateJob(job *models.DownloadJob, status, detail, errMsg string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	// Validate transition.
 	if allowed, ok := validTransitions[job.Status]; ok {
 		if !allowed[status] && status != job.Status {
@@ -210,8 +220,10 @@ func (m *Manager) runAnnasDownload(job *models.DownloadJob) {
 	m.updateJob(job, "downloading", "Downloading from Anna's Archive...", "")
 
 	filePath, fileSize, err := m.direct.DownloadFromAnnas(job.MD5, job.Title, func(detail string) {
+		m.mu.Lock()
 		job.Detail = detail
 		job.UpdatedAt = time.Now()
+		m.mu.Unlock()
 	})
 	if err != nil {
 		slog.Error("anna's archive download failed", "title", job.Title, "error", err)
@@ -220,8 +232,19 @@ func (m *Manager) runAnnasDownload(job *models.DownloadJob) {
 			job.RetryCount++
 			m.updateJob(job, "retry_wait", fmt.Sprintf("Retry %d/%d scheduled", job.RetryCount, job.MaxRetries), err.Error())
 			go func() {
-				time.Sleep(time.Duration(m.cfg.RetryBackoffSeconds) * time.Second)
-				m.runAnnasDownload(job)
+				timer := time.NewTimer(time.Duration(m.cfg.RetryBackoffSeconds) * time.Second)
+				defer timer.Stop()
+				if m.shutdown != nil {
+					select {
+					case <-timer.C:
+						m.runAnnasDownload(job)
+					case <-m.shutdown.Done():
+						return
+					}
+				} else {
+					<-timer.C
+					m.runAnnasDownload(job)
+				}
 			}()
 		} else {
 			m.updateJob(job, "dead_letter", "Max retries exceeded", err.Error())
@@ -294,8 +317,10 @@ func (m *Manager) runDirectDownload(job *models.DownloadJob, fileURL, sourceID s
 	m.updateJob(job, "downloading", "Downloading...", "")
 
 	filePath, fileSize, err := m.direct.DownloadFromURL(fileURL, job.Title, func(detail string) {
+		m.mu.Lock()
 		job.Detail = detail
 		job.UpdatedAt = time.Now()
+		m.mu.Unlock()
 	})
 	if err != nil {
 		slog.Error("direct download failed", "title", job.Title, "error", err)
