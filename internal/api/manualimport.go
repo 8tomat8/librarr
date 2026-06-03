@@ -52,6 +52,13 @@ func (s *Server) handleScanImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := validateAllowedPath(req.Path, s.cfg); err != nil {
+		writeJSON(w, http.StatusForbidden, map[string]interface{}{
+			"success": false, "error": err.Error(),
+		})
+		return
+	}
+
 	info, err := os.Stat(req.Path)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
@@ -143,6 +150,11 @@ func (s *Server) handleImportFiles(w http.ResponseWriter, r *http.Request) {
 	var errors []string
 
 	for _, f := range req.Files {
+		if err := validateAllowedPath(f.Path, s.cfg); err != nil {
+			errors = append(errors, fmt.Sprintf("Access denied: %s", f.Path))
+			continue
+		}
+
 		if _, err := os.Stat(f.Path); err != nil {
 			errors = append(errors, fmt.Sprintf("File not found: %s", f.Path))
 			continue

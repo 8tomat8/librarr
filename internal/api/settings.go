@@ -2,12 +2,13 @@ package api
 
 import (
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/JeremiahM37/librarr/internal/netutil"
 )
 
 const maskedValue = "--------"
@@ -177,29 +178,9 @@ func (s *Server) loadSettings() map[string]interface{} {
 }
 
 // validateTestURL checks that a URL provided for connection testing is safe
-// (not targeting internal metadata services, localhost, etc.).
+// (not targeting internal metadata services, localhost, private networks, etc.).
 func validateTestURL(rawURL string) error {
-	if rawURL == "" {
-		return fmt.Errorf("URL is required")
-	}
-	if !strings.HasPrefix(rawURL, "http://") && !strings.HasPrefix(rawURL, "https://") {
-		return fmt.Errorf("URL must start with http:// or https://")
-	}
-	lower := strings.ToLower(rawURL)
-	// Block cloud metadata endpoints and link-local addresses.
-	blockedPrefixes := []string{
-		"http://169.254.",
-		"http://[fd",
-		"http://[fe80:",
-		"http://metadata.",
-		"http://metadata",
-	}
-	for _, prefix := range blockedPrefixes {
-		if strings.HasPrefix(lower, prefix) {
-			return fmt.Errorf("URL targets a restricted address")
-		}
-	}
-	return nil
+	return netutil.ValidateOutboundURL(rawURL)
 }
 
 // handleTestProwlarr actually tests the Prowlarr API connection.
@@ -267,6 +248,13 @@ func (s *Server) handleTestAudiobookshelf(w http.ResponseWriter, _ *http.Request
 		return
 	}
 
+	if err := validateTestURL(s.cfg.ABSURL); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"success": false, "error": err.Error(),
+		})
+		return
+	}
+
 	client := &http.Client{Timeout: 10 * time.Second}
 	req, _ := http.NewRequest("GET", s.cfg.ABSURL+"/api/libraries", nil)
 	req.Header.Set("Authorization", "Bearer "+s.cfg.ABSToken)
@@ -291,6 +279,13 @@ func (s *Server) handleTestKavita(w http.ResponseWriter, _ *http.Request) {
 	if !s.cfg.HasKavita() {
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"success": false, "error": "Kavita not configured",
+		})
+		return
+	}
+
+	if err := validateTestURL(s.cfg.KavitaURL); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"success": false, "error": err.Error(),
 		})
 		return
 	}

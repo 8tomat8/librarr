@@ -198,7 +198,11 @@ func TestIsExempt(t *testing.T) {
 		{"/torznab/api?t=caps", true},
 		{"/static/style.css", true},
 		{"/opds", true},
-		{"/opds/books", true},
+		{"/opds/", true},
+		{"/opds/opensearch.xml", true},
+		{"/opds/books", false},
+		{"/opds/search", false},
+		{"/opds/download/1", false},
 		{"/metrics", true},
 		{"/auth/oidc/callback", true},
 		// OpenAPI spec is public so AI agents / tooling can introspect the

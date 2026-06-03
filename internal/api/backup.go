@@ -43,8 +43,9 @@ func (s *Server) handleCreateBackup(w http.ResponseWriter, r *http.Request) {
 
 	zipPath := filepath.Join(backupDir, fmt.Sprintf("librarr-backup-%s.zip", name))
 	if err := s.createBackupZip(zipPath); err != nil {
+		slog.Error("backup creation failed", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
-			"success": false, "error": "Failed to create backup: " + err.Error(),
+			"success": false, "error": "Failed to create backup",
 		})
 		return
 	}
@@ -55,7 +56,6 @@ func (s *Server) handleCreateBackup(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
 		"name":    name,
-		"path":    zipPath,
 	})
 }
 
@@ -66,8 +66,9 @@ func (s *Server) handleDownloadBackup(w http.ResponseWriter, r *http.Request) {
 	defer os.Remove(zipPath)
 
 	if err := s.createBackupZip(zipPath); err != nil {
+		slog.Error("backup creation failed", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
-			"success": false, "error": "Failed to create backup: " + err.Error(),
+			"success": false, "error": "Failed to create backup",
 		})
 		return
 	}

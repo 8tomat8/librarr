@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	neturl "net/url"
 	"strings"
 	"time"
 
 	"github.com/JeremiahM37/librarr/internal/models"
+	"github.com/JeremiahM37/librarr/internal/netutil"
 	"github.com/JeremiahM37/librarr/internal/search"
 )
 
@@ -80,9 +82,10 @@ func (s *Server) handleTorrentDownload(w http.ResponseWriter, r *http.Request, r
 
 	url, err := s.resolveTorrentURL(r.Context(), req, models.SearchResult{})
 	if err != nil {
+		slog.Warn("torrent URL resolution failed", "title", req.Title, "error", err)
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
 			"success": false,
-			"error":   fmt.Sprintf("Failed to resolve AudioBookBay download: %v", err),
+			"error":   "Failed to resolve download URL",
 		})
 		return
 	}
@@ -138,9 +141,10 @@ func (s *Server) handleDirectDownloadReq(w http.ResponseWriter, req models.Downl
 
 		job, err := s.downloadMgr.StartAnnasDownload(req.MD5, req.Title)
 		if err != nil {
+			slog.Error("anna's download start failed", "title", req.Title, "error", err)
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
 				"success": false,
-				"error":   err.Error(),
+				"error":   "Failed to start download",
 			})
 			return
 		}
@@ -158,6 +162,15 @@ func (s *Server) handleDirectDownloadReq(w http.ResponseWriter, req models.Downl
 		if dlURL == "" {
 			dlURL = req.DownloadURL
 		}
+
+		if err := netutil.ValidateOutboundURL(dlURL); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+				"success": false,
+				"error":   err.Error(),
+			})
+			return
+		}
+
 		sourceID := extractSourceID(req)
 		if sourceID != "" && !req.Force && s.downloadMgr.HasSourceID(sourceID) {
 			writeJSON(w, http.StatusConflict, map[string]interface{}{
@@ -169,9 +182,10 @@ func (s *Server) handleDirectDownloadReq(w http.ResponseWriter, req models.Downl
 
 		job, err := s.downloadMgr.StartDirectDownload(dlURL, req.Title, req.Source, sourceID)
 		if err != nil {
+			slog.Error("direct download start failed", "title", req.Title, "error", err)
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
 				"success": false,
-				"error":   err.Error(),
+				"error":   "Failed to start download",
 			})
 			return
 		}
@@ -388,7 +402,7 @@ func errString(err error) string {
 	if err == nil {
 		return ""
 	}
-	return err.Error()
+	return "Download failed"
 }
 
 // isNZBResult checks if a download request should be routed to SABnzbd.
