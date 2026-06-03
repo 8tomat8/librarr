@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"runtime"
 	"time"
@@ -152,4 +153,15 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(v)
+}
+
+// writeError logs err server-side and returns a generic message to the client.
+func writeError(w http.ResponseWriter, status int, publicMsg string, err error) {
+	if err != nil {
+		slog.Error(publicMsg, "error", err)
+	}
+	writeJSON(w, status, map[string]interface{}{
+		"success": false,
+		"error":   publicMsg,
+	})
 }

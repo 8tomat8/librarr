@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/JeremiahM37/librarr/internal/download"
 )
 
 // allowedUploadExts defines accepted file extensions for upload.
@@ -90,6 +92,18 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Verify content matches declared extension via magic bytes.
+	if detected, detectErr := download.DetectFileExtension(tmpPath); detectErr == nil && detected != "" {
+		if detected != ext && !(ext == ".zip" && detected == ".epub") {
+			os.Remove(tmpPath)
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+				"success": false,
+				"error":   fmt.Sprintf("File content (%s) does not match extension (%s)", detected, ext),
+			})
+			return
+		}
+	}
+
 	username, _ := r.Context().Value(ctxUsername).(string)
 	title := r.FormValue("title")
 	author := r.FormValue("author")
@@ -142,15 +156,12 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleListUploads(w http.ResponseWriter, r *http.Request) {
-	limit := queryInt(r, "limit", 50)
-	offset := queryInt(r, "offset", 0)
+	limit := queryBoundedInt(r, "limit", 50, 1, 500)
+	offset := queryBoundedInt(r, "offset", 0, 0, 1_000_000)
 
 	uploads, err := s.db.GetUploads(limit, offset)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
-			"success": false,
-			"error":   err.Error(),
-		})
+		writeError(w, http.StatusInternalServerError, "Failed to list uploads", err)
 		return
 	}
 

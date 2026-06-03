@@ -130,6 +130,13 @@ func (s *Server) handleTorrentDownload(w http.ResponseWriter, r *http.Request, r
 func (s *Server) handleDirectDownloadReq(w http.ResponseWriter, req models.DownloadRequest) {
 	// Anna's Archive download.
 	if req.MD5 != "" {
+		if !validateMD5(req.MD5) {
+			writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+				"success": false,
+				"error":   "Invalid MD5 hash",
+			})
+			return
+		}
 		sourceID := req.MD5
 		if !req.Force && s.downloadMgr.HasSourceID(sourceID) {
 			writeJSON(w, http.StatusConflict, map[string]interface{}{
@@ -227,6 +234,10 @@ func (s *Server) handleDownloadAnnas(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.MD5 == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"success": false, "error": "No MD5 hash"})
+		return
+	}
+	if !validateMD5(req.MD5) {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{"success": false, "error": "Invalid MD5 hash"})
 		return
 	}
 	s.handleDirectDownloadReq(w, req)

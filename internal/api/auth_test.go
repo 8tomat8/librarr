@@ -15,8 +15,8 @@ import (
 func TestSessionStore_CreateAndGet(t *testing.T) {
 	store := NewSessionStore()
 
-	token := store.Create(1, "testuser", "admin")
-	if token == "" {
+	token, err := store.Create(1, "testuser", "admin")
+	if err != nil || token == "" {
 		t.Fatal("expected non-empty token")
 	}
 
@@ -37,7 +37,10 @@ func TestSessionStore_CreateAndGet(t *testing.T) {
 
 func TestSessionStore_Valid(t *testing.T) {
 	store := NewSessionStore()
-	token := store.Create(1, "user", "admin")
+	token, err := store.Create(1, "user", "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if !store.Valid(token) {
 		t.Error("expected token to be valid")
@@ -50,7 +53,10 @@ func TestSessionStore_Valid(t *testing.T) {
 
 func TestSessionStore_Delete(t *testing.T) {
 	store := NewSessionStore()
-	token := store.Create(1, "user", "admin")
+	token, err := store.Create(1, "user", "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	store.Delete(token)
 	if store.Valid(token) {
@@ -60,7 +66,10 @@ func TestSessionStore_Delete(t *testing.T) {
 
 func TestSessionStore_Expiry(t *testing.T) {
 	store := NewSessionStore()
-	token := store.Create(1, "user", "admin")
+	token, err := store.Create(1, "user", "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// Manually expire the session
 	store.mu.Lock()
@@ -84,8 +93,8 @@ func TestSessionStore_PendingTOTP(t *testing.T) {
 	store := NewSessionStore()
 
 	t.Run("create and validate", func(t *testing.T) {
-		token := store.CreatePendingTOTP(42)
-		if token == "" {
+		token, err := store.CreatePendingTOTP(42)
+		if err != nil || token == "" {
 			t.Fatal("expected non-empty pending token")
 		}
 
@@ -99,7 +108,10 @@ func TestSessionStore_PendingTOTP(t *testing.T) {
 	})
 
 	t.Run("consumed after first use", func(t *testing.T) {
-		token := store.CreatePendingTOTP(1)
+		token, err := store.CreatePendingTOTP(1)
+		if err != nil {
+			t.Fatal(err)
+		}
 		store.ValidatePendingTOTP(token)
 
 		_, valid := store.ValidatePendingTOTP(token)
@@ -109,7 +121,10 @@ func TestSessionStore_PendingTOTP(t *testing.T) {
 	})
 
 	t.Run("expired pending TOTP", func(t *testing.T) {
-		token := store.CreatePendingTOTP(1)
+		token, err := store.CreatePendingTOTP(1)
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		store.mu.Lock()
 		store.pendingTOTP[token].Expiry = time.Now().Add(-1 * time.Minute)
@@ -134,7 +149,10 @@ func TestSessionStore_UniqueTokens(t *testing.T) {
 	tokens := make(map[string]bool)
 
 	for i := 0; i < 100; i++ {
-		token := store.Create(int64(i), "user", "admin")
+		token, err := store.Create(int64(i), "user", "admin")
+		if err != nil {
+			t.Fatal(err)
+		}
 		if tokens[token] {
 			t.Fatalf("duplicate token generated: %s", token)
 		}

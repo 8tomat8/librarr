@@ -71,6 +71,10 @@ func main() {
 
 	searchMgr := search.NewManager(cfg, sources, health)
 
+	// Graceful shutdown context (used by background workers).
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	// Log enabled sources.
 	for _, s := range sources {
 		status := "disabled"
@@ -87,6 +91,7 @@ func main() {
 	organizer := organize.NewOrganizer(cfg)
 	targets := organize.NewLibraryTargets(cfg)
 	downloadMgr := download.NewManager(cfg, database, qb, sab, directDL, organizer, targets, health)
+	downloadMgr.SetShutdownContext(ctx)
 
 	// Try to connect to qBittorrent on startup.
 	if cfg.HasQBittorrent() {
@@ -94,10 +99,6 @@ func main() {
 			slog.Warn("qBittorrent initial login failed (will retry on demand)", "error", err)
 		}
 	}
-
-	// Graceful shutdown context.
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	// Start torrent completion watcher.
 	watcher := download.NewWatcher(cfg, database, qb, organizer, targets, health)

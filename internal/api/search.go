@@ -8,7 +8,7 @@ import (
 )
 
 func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
-	query := r.URL.Query().Get("q")
+	query := truncateSearchQuery(r.URL.Query().Get("q"))
 	if query == "" {
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"results": []interface{}{},
@@ -20,7 +20,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	username, _ := r.Context().Value(ctxUsername).(string)
 	s.db.LogActivity(username, "search", query, fmt.Sprintf("Ebook search: %s", query))
 
-	author := r.URL.Query().Get("author")
+	author := truncateSearchQuery(r.URL.Query().Get("author"))
 	results, elapsed := s.searchMgr.SearchWithAuthor(r.Context(), "main", query, author)
 	if results == nil {
 		results = []models.SearchResult{}
@@ -44,7 +44,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleSearchAudiobooks(w http.ResponseWriter, r *http.Request) {
-	query := r.URL.Query().Get("q")
+	query := truncateSearchQuery(r.URL.Query().Get("q"))
 	if query == "" {
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"results": []interface{}{},
@@ -53,7 +53,7 @@ func (s *Server) handleSearchAudiobooks(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	author := r.URL.Query().Get("author")
+	author := truncateSearchQuery(r.URL.Query().Get("author"))
 	results, elapsed := s.searchMgr.SearchWithAuthor(r.Context(), "audiobook", query, author)
 	if results == nil {
 		results = []models.SearchResult{}
@@ -76,7 +76,7 @@ func (s *Server) handleSearchAudiobooks(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleSearchManga(w http.ResponseWriter, r *http.Request) {
-	query := r.URL.Query().Get("q")
+	query := truncateSearchQuery(r.URL.Query().Get("q"))
 	if query == "" {
 		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"results": []interface{}{},
@@ -85,7 +85,7 @@ func (s *Server) handleSearchManga(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	author := r.URL.Query().Get("author")
+	author := truncateSearchQuery(r.URL.Query().Get("author"))
 	results, elapsed := s.searchMgr.SearchWithAuthor(r.Context(), "manga", query, author)
 	if results == nil {
 		results = []models.SearchResult{}
