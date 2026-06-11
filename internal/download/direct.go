@@ -36,9 +36,9 @@ var errLibgenNoMatch = errors.New("libgen no matching MD5")
 // localizing the message later can't silently break detection.
 type noMatchError struct{ msg string }
 
-func (e *noMatchError) Error() string         { return e.msg }
-func (e *noMatchError) Is(target error) bool  { return target == errLibgenNoMatch }
-func (e *noMatchError) Unwrap() error         { return errLibgenNoMatch }
+func (e *noMatchError) Error() string        { return e.msg }
+func (e *noMatchError) Is(target error) bool { return target == errLibgenNoMatch }
+func (e *noMatchError) Unwrap() error        { return errLibgenNoMatch }
 
 // mirrors returns the list of libgen-style ads.php/get.php mirrors to try, in
 // order. Sourced from the runtime registry (cfg.Sources.LibgenMirrors).
