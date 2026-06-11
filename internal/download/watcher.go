@@ -152,9 +152,8 @@ func (w *Watcher) importTorrent(t TorrentInfo, mediaType string) {
 func (w *Watcher) resolveLocalPath(t TorrentInfo, mediaType string) string {
 	var rootName string
 
-	// Use t.ContentPath if available directly.
 	if t.ContentPath != "" {
-		return normalizeTorrentPath(t.ContentPath)
+		return w.resolveContentPath(t, mediaType)
 	}
 
 	// Fetch files from qBittorrent to find the actual root folder/file.
@@ -186,22 +185,58 @@ func (w *Watcher) resolveLocalPath(t TorrentInfo, mediaType string) string {
 		rootName = normalizeTorrentPath(t.Name)
 	}
 
+	return filepath.Join(w.incomingDirForMedia(mediaType), rootName)
+}
+
+func (w *Watcher) incomingDirForMedia(mediaType string) string {
 	switch mediaType {
 	case "ebook":
-		return filepath.Join(w.cfg.IncomingDir, rootName)
+		return w.cfg.IncomingDir
 	case "audiobook":
 		if w.cfg.QBAudiobookSavePath != "" {
-			return filepath.Join(w.cfg.QBAudiobookSavePath, rootName)
+			return w.cfg.QBAudiobookSavePath
 		}
-		return filepath.Join(w.cfg.IncomingDir, rootName)
+		return w.cfg.IncomingDir
 	case "manga":
 		if w.cfg.MangaIncomingDir != "" {
-			return filepath.Join(w.cfg.MangaIncomingDir, rootName)
+			return w.cfg.MangaIncomingDir
 		}
-		return filepath.Join(w.cfg.IncomingDir, rootName)
+		return w.cfg.IncomingDir
 	default:
-		return filepath.Join(w.cfg.IncomingDir, rootName)
+		return w.cfg.IncomingDir
 	}
+}
+
+func (w *Watcher) resolveContentPath(t TorrentInfo, mediaType string) string {
+	contentPath := normalizeTorrentPath(t.ContentPath)
+	savePath := normalizeTorrentPath(t.SavePath)
+	localIncoming := w.incomingDirForMedia(mediaType)
+
+	if contentPath == "" {
+		return localIncoming
+	}
+
+	if localIncoming != "" {
+		if rel, err := filepath.Rel(localIncoming, contentPath); err == nil && rel == "." {
+			return contentPath
+		} else if err == nil && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)) && rel != ".." {
+			return contentPath
+		}
+	}
+
+	if savePath != "" {
+		if rel, err := filepath.Rel(savePath, contentPath); err == nil && rel == "." {
+			return localIncoming
+		} else if err == nil && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)) && rel != ".." {
+			return filepath.Join(localIncoming, rel)
+		}
+	}
+
+	if !filepath.IsAbs(contentPath) && contentPath != ".." && !strings.HasPrefix(contentPath, ".."+string(os.PathSeparator)) {
+		return filepath.Join(localIncoming, contentPath)
+	}
+
+	return filepath.Join(localIncoming, filepath.Base(contentPath))
 }
 
 func (w *Watcher) importEbook(t TorrentInfo, savePath string) error {

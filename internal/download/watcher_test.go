@@ -29,6 +29,65 @@ func TestResolveLocalPathAudiobookUsesContentPath(t *testing.T) {
 	}
 }
 
+func TestResolveLocalPathAudiobookMapsRemoteContentPathToLocalIncoming(t *testing.T) {
+	w := &Watcher{
+		cfg: &config.Config{
+			QBAudiobookSavePath: "/data/audiobooks-incoming",
+			IncomingDir:         "/data/incoming",
+		},
+	}
+
+	got := w.resolveLocalPath(TorrentInfo{
+		Name:        "Brigands &amp; Breadknives (Legends &amp; Lattes) - Travis Baldree",
+		ContentPath: "/downloads/audiobooks-incoming/Brigands &amp; Breadknives.m4b",
+		SavePath:    "/downloads/audiobooks-incoming",
+	}, "audiobook")
+
+	want := "/data/audiobooks-incoming/Brigands & Breadknives.m4b"
+	if got != want {
+		t.Fatalf("resolveLocalPath = %q, want %q", got, want)
+	}
+}
+
+func TestResolveLocalPathAudiobookPreservesRelativeContentPath(t *testing.T) {
+	w := &Watcher{
+		cfg: &config.Config{
+			QBAudiobookSavePath: "/data/audiobooks-incoming",
+			IncomingDir:         "/data/incoming",
+		},
+	}
+
+	got := w.resolveLocalPath(TorrentInfo{
+		Name:        "Some Book",
+		ContentPath: "Series/Some Book/part01.mp3",
+	}, "audiobook")
+
+	want := filepath.Join("/data/audiobooks-incoming", "Series/Some Book/part01.mp3")
+	if got != want {
+		t.Fatalf("resolveLocalPath = %q, want %q", got, want)
+	}
+}
+
+func TestResolveLocalPathAudiobookMapsRemoteSaveRootToLocalIncoming(t *testing.T) {
+	w := &Watcher{
+		cfg: &config.Config{
+			QBAudiobookSavePath: "/data/audiobooks-incoming",
+			IncomingDir:         "/data/incoming",
+		},
+	}
+
+	got := w.resolveLocalPath(TorrentInfo{
+		Name:        "Some Book",
+		ContentPath: "/downloads/audiobooks-incoming",
+		SavePath:    "/downloads/audiobooks-incoming",
+	}, "audiobook")
+
+	want := "/data/audiobooks-incoming"
+	if got != want {
+		t.Fatalf("resolveLocalPath = %q, want %q", got, want)
+	}
+}
+
 func TestResolveLocalPathAudiobookFallsBackToName(t *testing.T) {
 	w := &Watcher{
 		cfg: &config.Config{
@@ -84,7 +143,7 @@ func TestResolveLocalPathMangaFallsBackToIncomingDir(t *testing.T) {
 func TestResolveLocalPathMangaUsesConfiguredDir(t *testing.T) {
 	w := &Watcher{
 		cfg: &config.Config{
-			IncomingDir:     "/downloads/incoming",
+			IncomingDir:      "/downloads/incoming",
 			MangaIncomingDir: "/downloads/manga-incoming",
 		},
 	}
