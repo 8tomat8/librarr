@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha1"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -32,6 +33,17 @@ func NewDirectDownloader(cfg *config.Config, client *http.Client) *DirectDownloa
 }
 
 var getLinkRe = regexp.MustCompile(`href="(get\.php\?md5=[^"]+)"`)
+var errLibgenNoMatch = errors.New("libgen no matching MD5")
+
+// noMatchError surfaces a user-friendly message via Error() while still
+// matching errLibgenNoMatch under errors.Is. Lets callers route on the
+// sentinel (errors.Is) instead of the user-facing string, so rewording or
+// localizing the message later can't silently break detection.
+type noMatchError struct{ msg string }
+
+func (e *noMatchError) Error() string        { return e.msg }
+func (e *noMatchError) Is(target error) bool { return target == errLibgenNoMatch }
+func (e *noMatchError) Unwrap() error        { return errLibgenNoMatch }
 
 const zlibraryUserAgent = "Mozilla/5.0 (X11; Linux x86_64; rv:151.0) Gecko/20100101 Firefox/151.0"
 
@@ -58,6 +70,13 @@ func (d *DirectDownloader) DownloadFromAnnas(md5, title string, progressFn func(
 		}
 		altURL, altErr := d.tryAltMD5(title, md5, progressFn)
 		if altErr != nil {
+			if errors.Is(mirrorErr, errLibgenNoMatch) || errors.Is(altErr, errLibgenNoMatch) {
+				// noMatchError pairs the user-facing message with errLibgenNoMatch
+				// as a sentinel, so callers (e.g. manager.go) can detect the
+				// no-match case via errors.Is — not by string-matching the
+				// localized error message.
+				return "", 0, &noMatchError{msg: "Anna's Archive could not find a matching LibGen MD5 for this book. Download it manually from Anna's Archive or choose another source."}
+			}
 			return "", 0, fmt.Errorf("all libgen mirrors failed (%v); alt search also failed: %v", mirrorErr, altErr)
 		}
 		return d.downloadFile(altURL, title, progressFn)
@@ -80,6 +99,7 @@ func (d *DirectDownloader) DownloadFromAnnas(md5, title string, progressFn func(
 // have the book while others don't.
 func (d *DirectDownloader) fetchLibgenDownloadURL(md5 string, progressFn func(string)) (string, error) {
 	var lastErr error
+	noMatch := false
 	for i, mirror := range d.mirrors() {
 		if i > 0 && progressFn != nil {
 			progressFn(fmt.Sprintf("Trying mirror: %s", mirror))
@@ -107,6 +127,13 @@ func (d *DirectDownloader) fetchLibgenDownloadURL(md5 string, progressFn func(st
 			continue
 		}
 
+		bodyStr := string(body)
+		if strings.Contains(bodyStr, "File not found in DB") || strings.Contains(bodyStr, "File not found") {
+			noMatch = true
+			lastErr = fmt.Errorf("%s: %w", mirror, errLibgenNoMatch)
+			continue
+		}
+
 		match := getLinkRe.FindSubmatch(body)
 		if len(match) < 2 {
 			lastErr = fmt.Errorf("%s: no get.php link for md5=%s", mirror, md5)
@@ -114,6 +141,9 @@ func (d *DirectDownloader) fetchLibgenDownloadURL(md5 string, progressFn func(st
 		}
 
 		return fmt.Sprintf("%s/%s", mirror, string(match[1])), nil
+	}
+	if noMatch {
+		return "", fmt.Errorf("%w", errLibgenNoMatch)
 	}
 	return "", lastErr
 }
