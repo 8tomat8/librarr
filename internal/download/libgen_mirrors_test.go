@@ -200,6 +200,69 @@ func TestFetchLibgenDownloadURL_ProgressCallback(t *testing.T) {
 	}
 }
 
+// TestIsAnnasNoMatchError_RecognizesSentinel — the manager must classify a
+// no-match error correctly even if the user-facing message is reworded or
+// localized. errors.Is on the sentinel is the contract; string matching is a
+// fallback for legacy errors round-tripped through the DB.
+func TestIsAnnasNoMatchError_RecognizesSentinel(t *testing.T) {
+	t.Run("sentinel via noMatchError", func(t *testing.T) {
+		err := &noMatchError{msg: "Anything in any language at all"}
+		if !isAnnasNoMatchError(err) {
+			t.Fatalf("noMatchError must be classified as no-match")
+		}
+		if !errors.Is(err, errLibgenNoMatch) {
+			t.Fatalf("noMatchError must satisfy errors.Is(err, errLibgenNoMatch)")
+		}
+	})
+
+	t.Run("sentinel via fmt.Errorf %w wrap", func(t *testing.T) {
+		wrapped := fmt.Errorf("anna's archive: %w", errLibgenNoMatch)
+		if !isAnnasNoMatchError(wrapped) {
+			t.Fatalf("fmt.Errorf %%w wrap of errLibgenNoMatch must be classified")
+		}
+	})
+
+	t.Run("legacy string match still works", func(t *testing.T) {
+		// Pre-PR builds emitted plain errors with these phrases. We must keep
+		// recognizing them so jobs persisted by the old build still dead-letter
+		// correctly after the new build starts up.
+		for _, msg := range []string{
+			"all libgen mirrors failed: File not found in DB",
+			"some message mentioning matching LibGen MD5 in the middle",
+			"libgen no matching MD5",
+		} {
+			if !isAnnasNoMatchError(errors.New(msg)) {
+				t.Errorf("legacy phrase should still match: %q", msg)
+			}
+		}
+	})
+
+	t.Run("unrelated errors are not classified", func(t *testing.T) {
+		for _, e := range []error{
+			nil,
+			errors.New("timeout"),
+			errors.New("http 500"),
+			fmt.Errorf("wrapped: %w", errors.New("connection refused")),
+		} {
+			if isAnnasNoMatchError(e) {
+				t.Errorf("must not classify unrelated error as no-match: %v", e)
+			}
+		}
+	})
+}
+
+// TestNoMatchError_FrontendMessagePreserved — the user-facing Error() string
+// must be exactly the message the frontend's no-match detector looks for,
+// otherwise the sticky toast won't render. This locks in the contract between
+// the Go backend and the JS isAnnaNoMatchError() check in web/index.html.
+func TestNoMatchError_FrontendMessagePreserved(t *testing.T) {
+	e := &noMatchError{msg: "Anna's Archive could not find a matching LibGen MD5 for this book. Download it manually from Anna's Archive or choose another source."}
+	got := e.Error()
+	if !strings.Contains(got, "matching LibGen MD5") {
+		t.Fatalf("Error() must contain 'matching LibGen MD5' for the frontend to recognize: %q", got)
+	}
+}
+
 // TestLibgenMirrors_Configured ensures the canonical sources registry ships
 // multiple mirrors so a single mirror outage doesn't break downloads entirely.
 func TestLibgenMirrors_Configured(t *testing.T) {

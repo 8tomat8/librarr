@@ -1,6 +1,7 @@
 package download
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -318,6 +319,15 @@ func isAnnasNoMatchError(err error) bool {
 	if err == nil {
 		return false
 	}
+	// Primary: sentinel match (works regardless of how the user-facing
+	// message gets reworded or localized later).
+	if errors.Is(err, errLibgenNoMatch) {
+		return true
+	}
+	// Fallback: string match. Covers any path that builds a no-match message
+	// without going through noMatchError or fetchLibgenDownloadURL — e.g.
+	// an error string round-tripped through the job DB from an older build
+	// that didn't wrap.
 	msg := err.Error()
 	return strings.Contains(msg, "matching LibGen MD5") ||
 		strings.Contains(msg, "libgen no matching MD5") ||

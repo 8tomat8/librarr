@@ -263,7 +263,7 @@ func extractFormatFromTitle(title string) string {
 // guessMediaType guesses the media type from the result source.
 func guessMediaType(result models.SearchResult) string {
 	switch result.Source {
-	case "audiobook":
+	case "audiobook", "prowlarr_audiobooks":
 		return "audiobook"
 	case "prowlarr_manga", "nyaa_manga", "mangadex", "annas_manga":
 		return "manga"

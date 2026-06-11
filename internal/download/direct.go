@@ -30,6 +30,16 @@ func NewDirectDownloader(cfg *config.Config, client *http.Client) *DirectDownloa
 var getLinkRe = regexp.MustCompile(`href="(get\.php\?md5=[^"]+)"`)
 var errLibgenNoMatch = errors.New("libgen no matching MD5")
 
+// noMatchError surfaces a user-friendly message via Error() while still
+// matching errLibgenNoMatch under errors.Is. Lets callers route on the
+// sentinel (errors.Is) instead of the user-facing string, so rewording or
+// localizing the message later can't silently break detection.
+type noMatchError struct{ msg string }
+
+func (e *noMatchError) Error() string         { return e.msg }
+func (e *noMatchError) Is(target error) bool  { return target == errLibgenNoMatch }
+func (e *noMatchError) Unwrap() error         { return errLibgenNoMatch }
+
 // mirrors returns the list of libgen-style ads.php/get.php mirrors to try, in
 // order. Sourced from the runtime registry (cfg.Sources.LibgenMirrors).
 func (d *DirectDownloader) mirrors() []string {
@@ -54,7 +64,11 @@ func (d *DirectDownloader) DownloadFromAnnas(md5, title string, progressFn func(
 		altURL, altErr := d.tryAltMD5(title, md5, progressFn)
 		if altErr != nil {
 			if errors.Is(mirrorErr, errLibgenNoMatch) || errors.Is(altErr, errLibgenNoMatch) {
-				return "", 0, fmt.Errorf("Anna's Archive could not find a matching LibGen MD5 for this book. Download it manually from Anna's Archive or choose another source.")
+				// noMatchError pairs the user-facing message with errLibgenNoMatch
+				// as a sentinel, so callers (e.g. manager.go) can detect the
+				// no-match case via errors.Is — not by string-matching the
+				// localized error message.
+				return "", 0, &noMatchError{msg: "Anna's Archive could not find a matching LibGen MD5 for this book. Download it manually from Anna's Archive or choose another source."}
 			}
 			return "", 0, fmt.Errorf("all libgen mirrors failed (%v); alt search also failed: %v", mirrorErr, altErr)
 		}
