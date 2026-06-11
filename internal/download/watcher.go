@@ -153,15 +153,31 @@ func (w *Watcher) resolveLocalPath(t TorrentInfo, mediaType string) string {
 
 	// Use t.ContentPath if available directly.
 	if t.ContentPath != "" {
-		return t.ContentPath
+		return normalizeTorrentPath(t.ContentPath)
 	}
 
 	// Fetch files from qBittorrent to find the actual root folder/file.
-	files, err := w.qb.GetTorrentFiles(t.Hash)
+	var files []TorrentFile
+	var err error
+	if w.qb != nil {
+		files, err = w.qb.GetTorrentFiles(t.Hash)
+	}
 	if err == nil && len(files) > 0 {
-		parts := strings.Split(files[0].Name, "/")
-		if len(parts) > 0 {
-			rootName = parts[0]
+		var firstPart string
+		allSameRoot := true
+		for i, f := range files {
+			parts := strings.Split(f.Name, "/")
+			if len(parts) > 0 {
+				if i == 0 {
+					firstPart = parts[0]
+				} else if firstPart != parts[0] {
+					allSameRoot = false
+					break
+				}
+			}
+		}
+		if allSameRoot && firstPart != "" {
+			rootName = normalizeTorrentPath(firstPart)
 		}
 	}
 
