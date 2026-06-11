@@ -262,8 +262,7 @@ func (w *Watcher) importAudiobook(t TorrentInfo, savePath string) error {
 
 	destPath, err := w.organizer.OrganizeAudiobook(savePath, title, author)
 	if err != nil {
-		slog.Warn("organize audiobook failed", "path", savePath, "error", err)
-		destPath = savePath
+		return fmt.Errorf("organize audiobook %q: %w", savePath, err)
 	}
 
 	w.db.AddItem(&models.LibraryItem{
