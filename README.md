@@ -218,6 +218,7 @@ All configuration is via environment variables. Every variable has a sensible de
 | `QB_MANGA_SAVE_PATH` | `/manga-incoming` | Manga download path |
 | `QB_MANGA_CATEGORY` | `manga` | Torrent category for manga |
 | `QB_PRIORITY` | `1` | Download client priority (lower = preferred) |
+| `REMOVE_TORRENT_AFTER_IMPORT` | `true` | Remove torrent from qBittorrent after a successful import. Set to `false` to keep seeding (required for private trackers with seed-time minimums). |
 | `SABNZBD_URL` | | SABnzbd URL |
 | `SABNZBD_API_KEY` | | SABnzbd API key |
 | `SABNZBD_CATEGORY` | `librarr` | NZB download category |
