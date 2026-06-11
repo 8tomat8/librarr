@@ -1,6 +1,7 @@
 package download
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -56,6 +57,9 @@ func NewManager(cfg *config.Config, database *db.DB, qb *QBittorrentClient, sab 
 		for _, j := range existingJobs {
 			j := j
 			m.jobs[j.ID] = &j
+			if isActiveJobStatus(j.Status) {
+				m.updateJob(&j, "dead_letter", "Interrupted by restart", "Download worker stopped before the job finished. Retry the download if needed.")
+			}
 		}
 		if len(existingJobs) > 0 {
 			slog.Info("loaded existing download jobs", "count", len(existingJobs))
@@ -63,6 +67,15 @@ func NewManager(cfg *config.Config, database *db.DB, qb *QBittorrentClient, sab 
 	}
 
 	return m
+}
+
+func isActiveJobStatus(status string) bool {
+	switch status {
+	case "queued", "searching", "downloading", "importing", "retry_wait":
+		return true
+	default:
+		return false
+	}
 }
 
 // StartAnnasDownload starts a background download from Anna's Archive.
@@ -216,6 +229,18 @@ func (m *Manager) runAnnasDownload(job *models.DownloadJob) {
 	if err != nil {
 		slog.Error("anna's archive download failed", "title", job.Title, "error", err)
 		m.health.RecordFailure("annas", err.Error(), "download")
+		if isAnnasNoMatchError(err) {
+			m.updateJob(job, "dead_letter", "No LibGen match found", err.Error())
+			if m.webhookSender != nil {
+				m.webhookSender.Send(webhook.Payload{
+					Event:   webhook.EventDownloadFailed,
+					Title:   "Download Failed",
+					Message: fmt.Sprintf("'%s' could not be downloaded automatically: %s", job.Title, err.Error()),
+					Status:  "failed",
+				})
+			}
+			return
+		}
 		if job.RetryCount < job.MaxRetries {
 			job.RetryCount++
 			m.updateJob(job, "retry_wait", fmt.Sprintf("Retry %d/%d scheduled", job.RetryCount, job.MaxRetries), err.Error())
@@ -288,6 +313,25 @@ func (m *Manager) runAnnasDownload(job *models.DownloadJob) {
 			Status:  "completed",
 		})
 	}
+}
+
+func isAnnasNoMatchError(err error) bool {
+	if err == nil {
+		return false
+	}
+	// Primary: sentinel match (works regardless of how the user-facing
+	// message gets reworded or localized later).
+	if errors.Is(err, errLibgenNoMatch) {
+		return true
+	}
+	// Fallback: string match. Covers any path that builds a no-match message
+	// without going through noMatchError or fetchLibgenDownloadURL — e.g.
+	// an error string round-tripped through the job DB from an older build
+	// that didn't wrap.
+	msg := err.Error()
+	return strings.Contains(msg, "matching LibGen MD5") ||
+		strings.Contains(msg, "libgen no matching MD5") ||
+		strings.Contains(msg, "File not found in DB")
 }
 
 func (m *Manager) runDirectDownload(job *models.DownloadJob, fileURL, sourceID string) {
