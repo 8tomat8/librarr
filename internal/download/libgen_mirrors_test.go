@@ -1,6 +1,7 @@
 package download
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -120,6 +121,26 @@ func TestFetchLibgenDownloadURL_MirrorLacksBook(t *testing.T) {
 	}
 	if !strings.HasPrefix(url, m2.URL+"/") {
 		t.Errorf("URL should be from m2, got: %s", url)
+	}
+}
+
+// TestFetchLibgenDownloadURL_NoMatchIsRecognized exercises the real LibGen
+// response we saw in production: HTML with "File not found in DB".
+func TestFetchLibgenDownloadURL_NoMatchIsRecognized(t *testing.T) {
+	m1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<div class="alert alert-danger" role="alert">File not found in DB</div>`))
+	}))
+	defer m1.Close()
+
+	cfg := newTestConfig([]string{m1.URL})
+	d := NewDirectDownloader(cfg, m1.Client())
+
+	_, err := d.fetchLibgenDownloadURL("missing-md5", nil)
+	if err == nil {
+		t.Fatal("expected no-match error, got nil")
+	}
+	if !errors.Is(err, errLibgenNoMatch) {
+		t.Fatalf("expected errLibgenNoMatch, got: %v", err)
 	}
 }
 
