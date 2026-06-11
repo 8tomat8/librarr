@@ -212,13 +212,43 @@ func (q *QBittorrentClient) AddTorrent(torrentURL, title, savePath, category str
 
 // TorrentInfo represents a torrent from the qBittorrent API.
 type TorrentInfo struct {
-	Name      string  `json:"name"`
-	Hash      string  `json:"hash"`
-	State     string  `json:"state"`
-	Progress  float64 `json:"progress"`
-	TotalSize int64   `json:"total_size"`
-	DlSpeed   int64   `json:"dlspeed"`
-	Category  string  `json:"category"`
+	Name        string  `json:"name"`
+	ContentPath string  `json:"content_path"`
+	SavePath    string  `json:"save_path"`
+	Hash        string  `json:"hash"`
+	State       string  `json:"state"`
+	Progress    float64 `json:"progress"`
+	TotalSize   int64   `json:"total_size"`
+	DlSpeed     int64   `json:"dlspeed"`
+	Category    string  `json:"category"`
+}
+
+// TorrentFile represents a file inside a torrent.
+type TorrentFile struct {
+	Name string `json:"name"`
+}
+
+// GetTorrentFiles returns the list of files for a given torrent hash.
+func (q *QBittorrentClient) GetTorrentFiles(hash string) ([]TorrentFile, error) {
+	data := url.Values{
+		"hash": {hash},
+	}
+	resp, err := q.doRequest("GET", "/api/v2/torrents/files", data)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("get torrent files HTTP %d", resp.StatusCode)
+	}
+
+	var files []TorrentFile
+	body, _ := io.ReadAll(resp.Body)
+	if err := jsonUnmarshal(body, &files); err != nil {
+		return nil, err
+	}
+	return files, nil
 }
 
 // GetTorrents returns torrents, optionally filtered by category.

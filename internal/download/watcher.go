@@ -149,18 +149,41 @@ func (w *Watcher) importTorrent(t TorrentInfo, mediaType string) {
 // to be looked up in the wrong place and could lead to ebooks being
 // misrouted if paths overlapped.
 func (w *Watcher) resolveLocalPath(t TorrentInfo, mediaType string) string {
+	var rootName string
+
+	// Use t.ContentPath if available directly.
+	if t.ContentPath != "" {
+		return t.ContentPath
+	}
+
+	// Fetch files from qBittorrent to find the actual root folder/file.
+	files, err := w.qb.GetTorrentFiles(t.Hash)
+	if err == nil && len(files) > 0 {
+		parts := strings.Split(files[0].Name, "/")
+		if len(parts) > 0 {
+			rootName = parts[0]
+		}
+	}
+
+	if rootName == "" {
+		rootName = normalizeTorrentPath(t.Name)
+	}
+
 	switch mediaType {
 	case "ebook":
-		return filepath.Join(w.cfg.IncomingDir, t.Name)
+		return filepath.Join(w.cfg.IncomingDir, rootName)
 	case "audiobook":
 		if w.cfg.QBAudiobookSavePath != "" {
-			return filepath.Join(w.cfg.QBAudiobookSavePath, t.Name)
+			return filepath.Join(w.cfg.QBAudiobookSavePath, rootName)
 		}
-		return filepath.Join(w.cfg.IncomingDir, t.Name)
+		return filepath.Join(w.cfg.IncomingDir, rootName)
 	case "manga":
-		return filepath.Join(w.cfg.MangaIncomingDir, t.Name)
+		if w.cfg.MangaIncomingDir != "" {
+			return filepath.Join(w.cfg.MangaIncomingDir, rootName)
+		}
+		return filepath.Join(w.cfg.IncomingDir, rootName)
 	default:
-		return filepath.Join(w.cfg.IncomingDir, t.Name)
+		return filepath.Join(w.cfg.IncomingDir, rootName)
 	}
 }
 
@@ -203,6 +226,11 @@ func (w *Watcher) importEbook(t TorrentInfo, savePath string) error {
 }
 
 func (w *Watcher) importAudiobook(t TorrentInfo, savePath string) error {
+	// If the source path doesn't even exist, fail the import.
+	if _, statErr := os.Stat(savePath); os.IsNotExist(statErr) {
+		return fmt.Errorf("source path does not exist: %s", savePath)
+	}
+
 	// Extract author from torrent name if possible.
 	author := ""
 	title := t.Name
