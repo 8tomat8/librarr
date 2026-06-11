@@ -241,15 +241,22 @@ func TestValidTransitions(t *testing.T) {
 
 func TestGetTorrentFiles(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/v2/torrents/files" {
+		switch r.URL.Path {
+		case "/api/v2/auth/login":
+			http.SetCookie(w, &http.Cookie{Name: "SID", Value: "test"})
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("Ok."))
+		case "/api/v2/torrents/files":
 			hash := r.URL.Query().Get("hash")
 			if hash == "testhash" {
 				w.WriteHeader(http.StatusOK)
 				w.Write([]byte(`[{"name": "RootFolder/file1.mp3"}, {"name": "RootFolder/file2.mp3"}]`))
 				return
 			}
+			w.WriteHeader(http.StatusNotFound)
+		default:
+			w.WriteHeader(http.StatusNotFound)
 		}
-		w.WriteHeader(http.StatusNotFound)
 	}))
 	defer srv.Close()
 
@@ -265,3 +272,4 @@ func TestGetTorrentFiles(t *testing.T) {
 		t.Errorf("expected RootFolder/file1.mp3, got: %s", files[0].Name)
 	}
 }
+

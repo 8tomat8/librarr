@@ -3,6 +3,7 @@ package download
 import (
 	"context"
 	"fmt"
+	"html"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -306,6 +307,16 @@ func (w *Watcher) importManga(t TorrentInfo, savePath string) error {
 	}
 
 	return nil
+}
+
+// normalizeTorrentPath unescapes HTML entities (e.g. &amp; -> &) that
+// qBittorrent may embed in torrent names.
+func normalizeTorrentPath(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	return html.UnescapeString(value)
 }
 
 // findFilesByExt recursively finds files with given extensions.
