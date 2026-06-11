@@ -870,9 +870,12 @@ const I18N = {
     status_queued: 'Queued',
     status_searching: 'Searching',
     status_importing: 'Importing',
+    status_retry_wait: 'Retry Wait',
     // Download actions
     download_started: 'Download started: {title}',
+    download_complete: 'Download completed: {title}',
     download_failed: 'Download failed: {msg}',
+    unknown_title: 'Unknown title',
     unknown_error: 'Unknown error',
     retrying_download: 'Retrying download',
     retry_failed: 'Retry failed',
@@ -1064,9 +1067,12 @@ const I18N = {
     status_queued: 'В очереди',
     status_searching: 'Поиск',
     status_importing: 'Импорт',
+    status_retry_wait: 'Ожидание повтора',
     // Download actions
     download_started: 'Загрузка начата: {title}',
+    download_complete: 'Загрузка завершена: {title}',
     download_failed: 'Ошибка загрузки: {msg}',
+    unknown_title: 'Неизвестное название',
     unknown_error: 'Неизвестная ошибка',
     retrying_download: 'Повтор загрузки',
     retry_failed: 'Ошибка повтора',
@@ -1232,6 +1238,7 @@ const state = {
   pendingDownloads: new Set(),
   downloadOutcomes: new Map(),
   downloadOutcomeTimers: new Map(),
+  trackedDownloadJobs: new Map(),
   downloadJobs: [],
   pendingRetryDownloads: new Set(),
   sortMode: 'relevance',
@@ -1785,7 +1792,7 @@ function renderSearchResults() {
 function renderBookCard(result, index) {
   const src = SOURCE_COLORS[result.source] || { bg: '#475569', text: 'white', label: result.source || 'Unknown' };
   const downloadKey = getDownloadKey(result);
-  const isDownloading = state.pendingDownloads.has(downloadKey);
+  const isDownloading = state.pendingDownloads.has(downloadKey) || state.trackedDownloadJobs.has(downloadKey);
   const downloadOutcome = state.downloadOutcomes.get(downloadKey);
   const coverHtml = result.cover_url
     ? `<img src="${escapeHtml(result.cover_url)}" alt="" class="w-full h-48 object-cover" loading="lazy" onerror="this.outerHTML=makePlaceholder('${escapeHtml(result.title || '')}', ${index})">`
@@ -1876,6 +1883,7 @@ function getDownloadKey(result) {
     result.info_hash || '',
     result.magnet || '',
     result.md5 || '',
+    result.source_id || '',
     result.title || '',
     result.author || '',
   ].join('|');
@@ -1896,6 +1904,46 @@ function setDownloadOutcome(downloadKey, status) {
   state.downloadOutcomeTimers.set(downloadKey, timer);
 }
 
+function isTerminalDownloadStatus(status) {
+  return status === 'completed' || status === 'error' || status === 'dead_letter';
+}
+
+function isActiveDownloadStatus(status) {
+  return status === 'queued' || status === 'searching' || status === 'downloading' || status === 'organizing' || status === 'importing' || status === 'retry_wait';
+}
+
+function trackDownloadJob(downloadKey, jobId, title) {
+  if (!jobId) return;
+  state.trackedDownloadJobs.set(downloadKey, { jobId: String(jobId), title });
+  startDownloadPolling();
+  renderSearchResults();
+}
+
+function syncTrackedDownloadJobs(jobs) {
+  if (!state.trackedDownloadJobs.size) return;
+
+  let changed = false;
+  for (const [downloadKey, tracked] of state.trackedDownloadJobs.entries()) {
+    const job = jobs.find(j => String(j.job_id) === tracked.jobId);
+    if (!job || !isTerminalDownloadStatus(job.status)) continue;
+
+    state.trackedDownloadJobs.delete(downloadKey);
+    changed = true;
+    if (job.status === 'completed') {
+      setDownloadOutcome(downloadKey, 'success');
+      showToast(t('download_complete', {title: tracked.title || job.title || t('unknown_title')}), 'success');
+    } else {
+      setDownloadOutcome(downloadKey, 'error');
+      showToast(t('download_failed', {msg: job.error || t('unknown_error')}), 'error');
+    }
+  }
+
+  if (changed) renderSearchResults();
+  if (!state.trackedDownloadJobs.size && !jobs.some(j => isActiveDownloadStatus(j.status))) {
+    stopDownloadPolling();
+  }
+}
+
 // ============================================================
 // DOWNLOAD
 // ============================================================
@@ -1912,6 +1960,7 @@ async function startDownload(result) {
       download_url: result.download_url || result.url || '',
       abb_url: result.abb_url || '',
       source: result.source,
+      source_id: result.source_id || '',
       md5: result.md5 || '',
       author: result.author || '',
       info_hash: result.info_hash || '',
@@ -1924,8 +1973,13 @@ async function startDownload(result) {
     });
 
     if (data.success || data.job_id) {
-      setDownloadOutcome(downloadKey, 'success');
-      showToast(t('download_started', {title: result.title}), 'success');
+      if (data.job_id) {
+        trackDownloadJob(downloadKey, data.job_id, result.title);
+        showToast(t('download_started', {title: result.title}), 'info');
+      } else {
+        setDownloadOutcome(downloadKey, 'success');
+        showToast(t('download_started', {title: result.title}), 'success');
+      }
     } else {
       setDownloadOutcome(downloadKey, 'error');
       showToast(t('download_failed', {msg: data.error || t('unknown_error')}), 'error');
@@ -1961,7 +2015,8 @@ async function refreshDownloads(manual = false) {
 
   try {
     const data = await apiJson('/api/downloads');
-    state.downloadJobs = data.jobs || [];
+    state.downloadJobs = data.downloads || data.jobs || [];
+    syncTrackedDownloadJobs(state.downloadJobs);
     renderDownloadList();
   } catch (err) {
     if (err.message !== 'Unauthorized') {
@@ -1978,7 +2033,7 @@ function renderDownloadList() {
   const emptyEl = document.getElementById('downloads-empty');
 
   // Update badge
-  const activeCount = jobs.filter(j => j.status === 'downloading' || j.status === 'queued' || j.status === 'searching' || j.status === 'organizing' || j.status === 'importing').length;
+  const activeCount = jobs.filter(j => isActiveDownloadStatus(j.status)).length;
   const badge = document.getElementById('dl-badge');
   if (activeCount > 0) {
     badge.textContent = activeCount;

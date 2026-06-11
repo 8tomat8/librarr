@@ -71,6 +71,7 @@ type DownloadJob struct {
 	Error         string             `json:"error,omitempty"`
 	URL           string             `json:"url,omitempty"`
 	MD5           string             `json:"md5,omitempty"`
+	SourceID      string             `json:"source_id,omitempty"`
 	MediaType     string             `json:"media_type,omitempty"`
 	RetryCount    int                `json:"retry_count"`
 	MaxRetries    int                `json:"max_retries"`
@@ -155,6 +156,8 @@ type User struct {
 type DownloadRequest struct {
 	Source           string `json:"source"`
 	Title            string `json:"title"`
+	Author           string `json:"author,omitempty"`
+	SourceID         string `json:"source_id,omitempty"`
 	DownloadURL      string `json:"download_url,omitempty"`
 	MagnetURL        string `json:"magnet_url,omitempty"`
 	InfoHash         string `json:"info_hash,omitempty"`

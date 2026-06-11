@@ -2,10 +2,14 @@ package download
 
 import (
 	"context"
+	"crypto/sha1"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"net/http/cookiejar"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -13,6 +17,7 @@ import (
 
 	"github.com/JeremiahM37/librarr/internal/config"
 	"github.com/JeremiahM37/librarr/internal/organize"
+	"github.com/JeremiahM37/librarr/internal/zlibraryparse"
 )
 
 // DirectDownloader handles direct HTTP file downloads (Anna's Archive, Gutenberg, etc.).
@@ -27,6 +32,8 @@ func NewDirectDownloader(cfg *config.Config, client *http.Client) *DirectDownloa
 }
 
 var getLinkRe = regexp.MustCompile(`href="(get\.php\?md5=[^"]+)"`)
+
+const zlibraryUserAgent = "Mozilla/5.0 (X11; Linux x86_64; rv:151.0) Gecko/20100101 Firefox/151.0"
 
 // mirrors returns the list of libgen-style ads.php/get.php mirrors to try, in
 // order. Sourced from the runtime registry (cfg.Sources.LibgenMirrors).
@@ -113,28 +120,78 @@ func (d *DirectDownloader) fetchLibgenDownloadURL(md5 string, progressFn func(st
 
 // DownloadFromURL downloads a file from any direct URL.
 func (d *DirectDownloader) DownloadFromURL(fileURL, title string, progressFn func(string)) (string, int64, error) {
-	return d.downloadFile(fileURL, title, progressFn)
+	return d.downloadFileWithClient(d.client, fileURL, title, progressFn)
+}
+
+func (d *DirectDownloader) DownloadFromZLibrary(fileURL, title, author, sourceID string, progressFn func(string)) (string, int64, error) {
+	if progressFn != nil {
+		progressFn("Signing in to Z-Library...")
+	}
+
+	client, err := d.zlibraryClient()
+	if err != nil {
+		return "", 0, err
+	}
+	if err := d.zlibraryLogin(client); err != nil {
+		return "", 0, err
+	}
+
+	if progressFn != nil {
+		progressFn("Resolving Z-Library download link...")
+	}
+	resolvedURL, err := d.resolveZLibraryDownloadURL(client, fileURL, title, author, sourceID)
+	if err != nil {
+		return "", 0, err
+	}
+	return d.downloadFileWithClientAndUserAgent(client, resolvedURL, title, progressFn, zlibraryUserAgent)
 }
 
 func (d *DirectDownloader) downloadFile(fileURL, title string, progressFn func(string)) (string, int64, error) {
+	return d.downloadFileWithClient(d.client, fileURL, title, progressFn)
+}
+
+func (d *DirectDownloader) downloadFileWithClient(client *http.Client, fileURL, title string, progressFn func(string)) (string, int64, error) {
+	return d.downloadFileWithClientAndUserAgent(client, fileURL, title, progressFn, d.cfg.UserAgent)
+}
+
+func (d *DirectDownloader) downloadFileWithClientAndUserAgent(client *http.Client, fileURL, title string, progressFn func(string), userAgent string) (string, int64, error) {
+	return d.downloadFileAttempt(client, fileURL, title, progressFn, true, userAgent)
+}
+
+func (d *DirectDownloader) downloadFileAttempt(client *http.Client, fileURL, title string, progressFn func(string), allowChallenge bool, userAgent string) (string, int64, error) {
 	req, err := http.NewRequest("GET", fileURL, nil)
 	if err != nil {
 		return "", 0, err
 	}
-	req.Header.Set("User-Agent", d.cfg.UserAgent)
+	req.Header.Set("User-Agent", userAgent)
 
-	resp, err := d.client.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", 0, fmt.Errorf("download file: %w", err)
 	}
 	defer resp.Body.Close()
+
+	contentType := resp.Header.Get("Content-Type")
+	if resp.StatusCode == http.StatusServiceUnavailable && strings.Contains(contentType, "text/html") && allowChallenge {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2*1024*1024))
+		if token, ok := solveZLibraryChallenge(body); ok {
+			if progressFn != nil {
+				progressFn("Passing Z-Library browser check...")
+			}
+			if err := addCookie(client, fileURL, "c_token", token); err != nil {
+				return "", 0, err
+			}
+			_ = addCookie(client, fileURL, "c_time", "0.1")
+			return d.downloadFileAttempt(client, fileURL, title, progressFn, false, userAgent)
+		}
+		return "", 0, fmt.Errorf("zlibrary browser challenge changed or could not be solved")
+	}
 
 	if resp.StatusCode != 200 {
 		return "", 0, fmt.Errorf("download HTTP %d", resp.StatusCode)
 	}
 
 	// If we got an HTML response, try to find the actual download link.
-	contentType := resp.Header.Get("Content-Type")
 	if strings.Contains(contentType, "text/html") {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2*1024*1024)) // 2MB max for HTML
 		bodyStr := string(body)
@@ -148,11 +205,14 @@ func (d *DirectDownloader) downloadFile(fileURL, title string, progressFn func(s
 		if len(getLink) < 2 {
 			fileLink := regexp.MustCompile(`href="(https?://[^"]*\.(epub|pdf|mobi)[^"]*)"`).FindStringSubmatch(bodyStr)
 			if len(fileLink) < 2 {
+				if dlLink := zlibraryparse.FindDownloadLinkInHTML(fileURL, body); dlLink != "" {
+					return d.downloadFileWithClientAndUserAgent(client, dlLink, title, progressFn, userAgent)
+				}
 				return "", 0, fmt.Errorf("no download link found in HTML response")
 			}
-			return d.downloadFile(fileLink[1], title, progressFn)
+			return d.downloadFileWithClientAndUserAgent(client, fileLink[1], title, progressFn, userAgent)
 		}
-		return d.downloadFile(getLink[1], title, progressFn)
+		return d.downloadFileWithClientAndUserAgent(client, getLink[1], title, progressFn, userAgent)
 	}
 
 	// Save to incoming directory.
@@ -212,6 +272,251 @@ func (d *DirectDownloader) downloadFile(fileURL, title string, progressFn func(s
 	}
 
 	return filePath, written, nil
+}
+
+func (d *DirectDownloader) zlibraryClient() (*http.Client, error) {
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		return nil, fmt.Errorf("zlibrary cookie jar: %w", err)
+	}
+	client := &http.Client{
+		Timeout:       d.client.Timeout,
+		CheckRedirect: d.client.CheckRedirect,
+		Jar:           jar,
+	}
+	if d.client.Transport != nil {
+		client.Transport = d.client.Transport
+	}
+	return client, nil
+}
+
+func (d *DirectDownloader) zlibraryBase() string {
+	if d.cfg.ZLibraryURL != "" {
+		return strings.TrimRight(d.cfg.ZLibraryURL, "/")
+	}
+	return strings.TrimRight(d.cfg.Sources.ZLibraryDefault, "/")
+}
+
+func (d *DirectDownloader) zlibraryLogin(client *http.Client) error {
+	baseURL := d.zlibraryBase()
+	form := url.Values{}
+	form.Set("isModal", "true")
+	form.Set("email", d.cfg.ZLibraryEmail)
+	form.Set("password", d.cfg.ZLibraryPassword)
+	form.Set("site_mode", "books")
+	form.Set("action", "login")
+	form.Set("redirectUrl", baseURL+"/")
+	form.Set("gg_json_mode", "1")
+
+	req, err := http.NewRequest("POST", baseURL+"/rpc.php", strings.NewReader(form.Encode()))
+	if err != nil {
+		return fmt.Errorf("zlibrary login request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
+	req.Header.Set("User-Agent", zlibraryUserAgent)
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("zlibrary login: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("zlibrary login HTTP %d", resp.StatusCode)
+	}
+
+	var loginResp struct {
+		Errors   []string `json:"errors"`
+		Response struct {
+			UserID  int    `json:"user_id"`
+			UserKey string `json:"user_key"`
+		} `json:"response"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&loginResp); err != nil {
+		return fmt.Errorf("zlibrary decode login: %w", err)
+	}
+	if len(loginResp.Errors) > 0 {
+		return fmt.Errorf("zlibrary login failed: %s", strings.Join(loginResp.Errors, "; "))
+	}
+	if loginResp.Response.UserID == 0 || loginResp.Response.UserKey == "" {
+		return fmt.Errorf("zlibrary login failed: missing session credentials")
+	}
+	return nil
+}
+
+func (d *DirectDownloader) resolveZLibraryDownloadURL(client *http.Client, currentURL, title, author, sourceID string) (string, error) {
+	baseURL := d.zlibraryBase()
+	if id, hash, ok := parseZLibrarySourceID(sourceID); ok {
+		return d.resolveZLibraryBookURL(client, baseURL, id, hash)
+	}
+
+	bookURL, err := d.resolveZLibraryBookFromSearch(client, baseURL, title, author)
+	if err == nil {
+		return bookURL, nil
+	}
+
+	if currentURL == "" {
+		return "", err
+	}
+	return currentURL, nil
+}
+
+func (d *DirectDownloader) resolveZLibraryBookURL(client *http.Client, baseURL string, id int, hash string) (string, error) {
+	req, err := http.NewRequest("GET", fmt.Sprintf("%s/eapi/book/%d/%s", baseURL, id, hash), nil)
+	if err != nil {
+		return "", fmt.Errorf("zlibrary detail request: %w", err)
+	}
+	req.Header.Set("User-Agent", zlibraryUserAgent)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("zlibrary detail: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("zlibrary detail HTTP %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("zlibrary read detail: %w", err)
+	}
+	if dl, err := zlibraryparse.DetailDownloadFromJSON(body); err == nil && dl != "" {
+		return zlibraryparse.AbsoluteURL(baseURL, dl), nil
+	}
+	if dl := zlibraryparse.FindDownloadLinkInHTML(baseURL, body); dl != "" {
+		return dl, nil
+	}
+	return "", fmt.Errorf("zlibrary detail missing download link")
+}
+
+func (d *DirectDownloader) resolveZLibraryBookFromSearch(client *http.Client, baseURL, title, author string) (string, error) {
+	form := url.Values{}
+	query := strings.TrimSpace(title + " " + author)
+	form.Set("message", query)
+	form.Set("limit", "10")
+	form.Set("page", "1")
+
+	req, err := http.NewRequest("POST", baseURL+"/eapi/book/search", strings.NewReader(form.Encode()))
+	if err != nil {
+		return "", fmt.Errorf("zlibrary search request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("User-Agent", zlibraryUserAgent)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("zlibrary search: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("zlibrary search HTTP %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("zlibrary read search: %w", err)
+	}
+	if dl := zlibraryparse.FindDownloadLinkInHTML(baseURL, body); dl != "" {
+		return dl, nil
+	}
+	books, err := zlibraryparse.BooksFromJSON(body)
+	if err != nil {
+		return "", fmt.Errorf("zlibrary decode search: %w", err)
+	}
+
+	titleNorm := strings.ToLower(strings.TrimSpace(title))
+	authorNorm := strings.ToLower(strings.TrimSpace(author))
+	for _, book := range books {
+		if strings.ToLower(strings.TrimSpace(book.Title)) != titleNorm {
+			continue
+		}
+		if authorNorm != "" && !strings.Contains(strings.ToLower(book.Author), authorNorm) {
+			continue
+		}
+		if book.Hash != "" {
+			return d.resolveZLibraryBookURL(client, baseURL, book.ID, book.Hash)
+		}
+		if book.DL != "" {
+			return zlibraryparse.AbsoluteURL(baseURL, book.DL), nil
+		}
+	}
+	return "", fmt.Errorf("zlibrary search did not find an exact downloadable match")
+}
+
+func parseZLibrarySourceID(sourceID string) (int, string, bool) {
+	if !strings.HasPrefix(sourceID, "zlibrary-") {
+		return 0, "", false
+	}
+	rest := strings.TrimPrefix(sourceID, "zlibrary-")
+	parts := strings.SplitN(rest, "-", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return 0, "", false
+	}
+	var id int
+	if _, err := fmt.Sscanf(parts[0], "%d", &id); err != nil || id == 0 {
+		return 0, "", false
+	}
+	return id, parts[1], true
+}
+
+func solveZLibraryChallenge(body []byte) (string, bool) {
+	if !bytesContains(body, []byte("Checking your browser")) || !bytesContains(body, []byte("c_token=")) {
+		return "", false
+	}
+	seedMatch := regexp.MustCompile(`\['([A-F0-9]{40})','c_token=','array'\]`).FindSubmatch(body)
+	if len(seedMatch) < 2 {
+		return "", false
+	}
+	seed := string(seedMatch[1])
+	startIndex, ok := firstHexNibble(seed)
+	if !ok || startIndex >= sha1.Size-1 {
+		return "", false
+	}
+	for i := 0; i < 5_000_000; i++ {
+		value := fmt.Sprintf("%s%d", seed, i)
+		sum := sha1.Sum([]byte(value))
+		if sum[startIndex] == 0xb0 && sum[startIndex+1] == 0x0b {
+			return value, true
+		}
+	}
+	return "", false
+}
+
+func firstHexNibble(s string) (int, bool) {
+	if s == "" {
+		return 0, false
+	}
+	switch {
+	case s[0] >= '0' && s[0] <= '9':
+		return int(s[0] - '0'), true
+	case s[0] >= 'a' && s[0] <= 'f':
+		return int(s[0]-'a') + 10, true
+	case s[0] >= 'A' && s[0] <= 'F':
+		return int(s[0]-'A') + 10, true
+	default:
+		return 0, false
+	}
+}
+
+func addCookie(client *http.Client, rawURL, name, value string) error {
+	if client.Jar == nil {
+		jar, err := cookiejar.New(nil)
+		if err != nil {
+			return fmt.Errorf("create cookie jar: %w", err)
+		}
+		client.Jar = jar
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("parse cookie URL: %w", err)
+	}
+	client.Jar.SetCookies(parsed, []*http.Cookie{{Name: name, Value: value, Path: "/"}})
+	return nil
+}
+
+func bytesContains(haystack, needle []byte) bool {
+	return strings.Contains(string(haystack), string(needle))
 }
 
 // detectFileExtension inspects the first bytes of a file and returns the

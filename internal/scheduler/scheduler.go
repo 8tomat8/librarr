@@ -195,7 +195,7 @@ func (s *Scheduler) startDownload(result models.SearchResult, title string) {
 		if dlURL == "" {
 			dlURL = result.EpubURL
 		}
-		_, err := s.downloadMgr.StartDirectDownload(dlURL, title, result.Source, result.SourceID)
+		_, err := s.downloadMgr.StartDirectDownload(dlURL, title, result.Source, result.SourceID, result.Author)
 		if err != nil {
 			slog.Error("scheduler: auto-download failed", "title", title, "error", err)
 		}
