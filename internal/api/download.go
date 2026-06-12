@@ -167,7 +167,7 @@ func (s *Server) handleDirectDownloadReq(w http.ResponseWriter, req models.Downl
 			return
 		}
 
-		job, err := s.downloadMgr.StartDirectDownload(dlURL, req.Title, req.Source, sourceID)
+		job, err := s.downloadMgr.StartDirectDownload(dlURL, req.Title, req.Source, sourceID, req.Author)
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
 				"success": false,
@@ -283,6 +283,9 @@ func (s *Server) handleCheckDuplicate(w http.ResponseWriter, r *http.Request) {
 }
 
 func extractSourceID(req models.DownloadRequest) string {
+	if req.SourceID != "" {
+		return req.SourceID
+	}
 	if req.MD5 != "" {
 		return req.MD5
 	}

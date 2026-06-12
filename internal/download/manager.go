@@ -106,20 +106,21 @@ func (m *Manager) StartNZBDownload(nzbURL, title string) (string, error) {
 }
 
 // StartDirectDownload starts a background download from a direct URL.
-func (m *Manager) StartDirectDownload(fileURL, title, source, sourceID string) (*models.DownloadJob, error) {
+func (m *Manager) StartDirectDownload(fileURL, title, source, sourceID, author string) (*models.DownloadJob, error) {
 	job := m.createJob(title, source, fileURL)
 	job.MediaType = "ebook"
+	job.SourceID = sourceID
 
 	if err := m.db.SaveJob(job); err != nil {
 		return nil, err
 	}
 
-	go m.runDirectDownload(job, fileURL, sourceID)
+	go m.runDirectDownload(job, fileURL, sourceID, author)
 	return job, nil
 }
 
 func (m *Manager) createJob(title, source, url string) *models.DownloadJob {
-	id := fmt.Sprintf("%x", time.Now().UnixNano()%0xFFFFFFFF)[:8]
+	id := fmt.Sprintf("%08x", time.Now().UnixNano()%0xFFFFFFFF)
 
 	job := &models.DownloadJob{
 		ID:         id,
@@ -213,7 +214,7 @@ func (m *Manager) RetryDeadLetterJob(jobID string) error {
 	if job.MD5 != "" {
 		go m.runAnnasDownload(job)
 	} else if job.URL != "" {
-		go m.runDirectDownload(job, job.URL, "")
+		go m.runDirectDownload(job, job.URL, job.SourceID, "")
 	}
 
 	return nil
@@ -334,10 +335,17 @@ func isAnnasNoMatchError(err error) bool {
 		strings.Contains(msg, "File not found in DB")
 }
 
-func (m *Manager) runDirectDownload(job *models.DownloadJob, fileURL, sourceID string) {
+func (m *Manager) runDirectDownload(job *models.DownloadJob, fileURL, sourceID, authorHint string) {
 	m.updateJob(job, "downloading", "Downloading...", "")
 
-	filePath, fileSize, err := m.direct.DownloadFromURL(fileURL, job.Title, func(detail string) {
+	download := m.direct.DownloadFromURL
+	if job.Source == "zlibrary" {
+		download = func(url, title string, progressFn func(string)) (string, int64, error) {
+			return m.direct.DownloadFromZLibrary(url, title, authorHint, sourceID, progressFn)
+		}
+	}
+
+	filePath, fileSize, err := download(fileURL, job.Title, func(detail string) {
 		job.Detail = detail
 		job.UpdatedAt = time.Now()
 	})
@@ -372,7 +380,7 @@ func (m *Manager) runDirectDownload(job *models.DownloadJob, fileURL, sourceID s
 		FileFormat:   "epub",
 		MediaType:    "ebook",
 		Source:       job.Source,
-		SourceID:     sourceID,
+		SourceID:     job.SourceID,
 	})
 
 	// Trigger library imports.

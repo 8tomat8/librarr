@@ -95,13 +95,14 @@ func (d *DB) migrate() error {
 		`CREATE TABLE IF NOT EXISTS download_jobs (
 			id TEXT PRIMARY KEY,
 			title TEXT NOT NULL DEFAULT '',
-			source TEXT NOT NULL DEFAULT '',
-			status TEXT NOT NULL DEFAULT 'queued',
-			detail TEXT NOT NULL DEFAULT '',
-			error TEXT NOT NULL DEFAULT '',
-			url TEXT NOT NULL DEFAULT '',
-			md5 TEXT NOT NULL DEFAULT '',
-			media_type TEXT NOT NULL DEFAULT 'ebook',
+				source TEXT NOT NULL DEFAULT '',
+				status TEXT NOT NULL DEFAULT 'queued',
+				detail TEXT NOT NULL DEFAULT '',
+				error TEXT NOT NULL DEFAULT '',
+				url TEXT NOT NULL DEFAULT '',
+				md5 TEXT NOT NULL DEFAULT '',
+				source_id TEXT NOT NULL DEFAULT '',
+				media_type TEXT NOT NULL DEFAULT 'ebook',
 			retry_count INTEGER NOT NULL DEFAULT 0,
 			max_retries INTEGER NOT NULL DEFAULT 2,
 			status_history TEXT NOT NULL DEFAULT '[]',
@@ -314,6 +315,7 @@ func (d *DB) migrate() error {
 	// and are ignored.
 	addColumns := []string{
 		`ALTER TABLE download_jobs ADD COLUMN status_history TEXT NOT NULL DEFAULT '[]'`,
+		`ALTER TABLE download_jobs ADD COLUMN source_id TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE activity_log ADD COLUMN user TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE reading_history ADD COLUMN status TEXT NOT NULL DEFAULT ''`,
 	}
@@ -877,10 +879,10 @@ func (d *DB) SaveJob(job *models.DownloadJob) error {
 	}
 
 	_, err := d.db.Exec(
-		`INSERT OR REPLACE INTO download_jobs (id, title, source, status, detail, error, url, md5, media_type, retry_count, max_retries, status_history, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT OR REPLACE INTO download_jobs (id, title, source, status, detail, error, url, md5, source_id, media_type, retry_count, max_retries, status_history, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		job.ID, job.Title, job.Source, job.Status, job.Detail, job.Error,
-		job.URL, job.MD5, job.MediaType,
+		job.URL, job.MD5, job.SourceID, job.MediaType,
 		job.RetryCount, job.MaxRetries, string(historyJSON),
 		float64(job.CreatedAt.Unix()), float64(job.UpdatedAt.Unix()),
 	)
@@ -901,13 +903,13 @@ func (d *DB) UpdateJobStatus(id, status, detail, errMsg string) error {
 
 // GetJob retrieves a download job by ID.
 func (d *DB) GetJob(id string) (*models.DownloadJob, error) {
-	row := d.db.QueryRow("SELECT id, title, source, status, detail, error, url, md5, media_type, retry_count, max_retries, status_history, created_at, updated_at FROM download_jobs WHERE id = ?", id)
+	row := d.db.QueryRow("SELECT id, title, source, status, detail, error, url, md5, source_id, media_type, retry_count, max_retries, status_history, created_at, updated_at FROM download_jobs WHERE id = ?", id)
 	return scanJob(row)
 }
 
 // GetJobs returns all download jobs.
 func (d *DB) GetJobs() ([]models.DownloadJob, error) {
-	rows, err := d.db.Query("SELECT id, title, source, status, detail, error, url, md5, media_type, retry_count, max_retries, status_history, created_at, updated_at FROM download_jobs ORDER BY created_at DESC")
+	rows, err := d.db.Query("SELECT id, title, source, status, detail, error, url, md5, source_id, media_type, retry_count, max_retries, status_history, created_at, updated_at FROM download_jobs ORDER BY created_at DESC")
 	if err != nil {
 		return nil, err
 	}
@@ -1073,7 +1075,7 @@ func scanJob(row *sql.Row) (*models.DownloadJob, error) {
 	var createdAt, updatedAt float64
 	var historyJSON string
 	err := row.Scan(&j.ID, &j.Title, &j.Source, &j.Status, &j.Detail, &j.Error,
-		&j.URL, &j.MD5, &j.MediaType,
+		&j.URL, &j.MD5, &j.SourceID, &j.MediaType,
 		&j.RetryCount, &j.MaxRetries, &historyJSON, &createdAt, &updatedAt)
 	if err != nil {
 		return nil, err
@@ -1091,7 +1093,7 @@ func scanJobFromRows(rows *sql.Rows) (*models.DownloadJob, error) {
 	var createdAt, updatedAt float64
 	var historyJSON string
 	err := rows.Scan(&j.ID, &j.Title, &j.Source, &j.Status, &j.Detail, &j.Error,
-		&j.URL, &j.MD5, &j.MediaType,
+		&j.URL, &j.MD5, &j.SourceID, &j.MediaType,
 		&j.RetryCount, &j.MaxRetries, &historyJSON, &createdAt, &updatedAt)
 	if err != nil {
 		return nil, err

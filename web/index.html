@@ -779,12 +779,15 @@ const I18N = {
     status_queued: 'Queued',
     status_searching: 'Searching',
     status_importing: 'Importing',
+    status_retry_wait: 'Retry Wait',
     // Download actions
     download_started: 'Download started: {title}',
+    download_complete: 'Download completed: {title}',
     download_completed: 'Download completed: {title}',
     download_failed: 'Download failed: {msg}',
     download_failed_anna_no_match: "Anna's Archive could not find a matching LibGen MD5 for this book. Download it manually from Anna's Archive or choose another source.",
     download_failed_anna_no_match_action: "Open Anna's Archive",
+    unknown_title: 'Unknown title',
     unknown_error: 'Unknown error',
     retrying_download: 'Retrying download',
     retry_failed: 'Retry failed',
@@ -976,12 +979,15 @@ const I18N = {
     status_queued: 'В очереди',
     status_searching: 'Поиск',
     status_importing: 'Импорт',
+    status_retry_wait: 'Ожидание повтора',
     // Download actions
     download_started: 'Загрузка начата: {title}',
+    download_complete: 'Загрузка завершена: {title}',
     download_completed: 'Загрузка завершена: {title}',
     download_failed: 'Ошибка загрузки: {msg}',
     download_failed_anna_no_match: 'Anna\'s Archive не смог найти совпадающий MD5 LibGen для этой книги. Скачайте её вручную из Anna\'s Archive или выберите другой источник.',
     download_failed_anna_no_match_action: 'Открыть Anna\'s Archive',
+    unknown_title: 'Неизвестное название',
     unknown_error: 'Неизвестная ошибка',
     retrying_download: 'Повтор загрузки',
     retry_failed: 'Ошибка повтора',
@@ -1762,6 +1768,7 @@ function renderBookCard(result, index) {
   const downloadKey = getDownloadKey(result);
   const isDownloading = state.pendingDownloads.has(downloadKey);
   const isTrackedAnnaDownload = hasTrackedAnnaDownload(downloadKey);
+  const isTrackedDirectDownload = hasTrackedDirectDownload(downloadKey);
   const downloadOutcome = state.downloadOutcomes.get(downloadKey);
   const coverHtml = result.cover_url
     ? `<img src="${escapeHtml(result.cover_url)}" alt="" class="w-full h-48 object-cover" loading="lazy" onerror="this.outerHTML=makePlaceholder('${escapeHtml(result.title || '')}', ${index})">`
@@ -1774,7 +1781,7 @@ function renderBookCard(result, index) {
   const format = result.format ? `<span class="text-slate-500 text-xs uppercase">${escapeHtml(result.format)}</span>` : '';
   const indexer = result.indexer ? `<span class="text-slate-600 text-xs">${escapeHtml(result.indexer)}</span>` : '';
 
-  const buttonState = (isDownloading || isTrackedAnnaDownload) ? 'loading' : (downloadOutcome ? downloadOutcome.status : 'idle');
+  const buttonState = (isDownloading || isTrackedAnnaDownload || isTrackedDirectDownload) ? 'loading' : (downloadOutcome ? downloadOutcome.status : 'idle');
   const buttonStyles = {
     idle: 'bg-indigo-600 hover:bg-indigo-500 text-white',
     loading: 'bg-indigo-500/70 text-white cursor-not-allowed',
@@ -1852,6 +1859,7 @@ function getDownloadKey(result) {
     result.info_hash || '',
     result.magnet || '',
     result.md5 || '',
+    result.source_id || '',
     result.title || '',
     result.author || '',
   ].join('|');
@@ -1859,7 +1867,14 @@ function getDownloadKey(result) {
 
 function hasTrackedAnnaDownload(downloadKey) {
   for (const tracked of state.trackedDownloadJobs.values()) {
-    if (tracked.key === downloadKey) return true;
+    if (tracked.key === downloadKey && tracked.source === 'annas') return true;
+  }
+  return false;
+}
+
+function hasTrackedDirectDownload(downloadKey) {
+  for (const tracked of state.trackedDownloadJobs.values()) {
+    if (tracked.key === downloadKey && tracked.source !== 'annas') return true;
   }
   return false;
 }
@@ -1881,6 +1896,22 @@ function setDownloadOutcome(downloadKey, status, persist = false) {
   state.downloadOutcomeTimers.set(downloadKey, timer);
 }
 
+function isTerminalDownloadStatus(status) {
+  return status === 'completed' || status === 'error' || status === 'dead_letter';
+}
+
+function isActiveDownloadStatus(status) {
+  return status === 'queued' || status === 'searching' || status === 'downloading' || status === 'organizing' || status === 'importing' || status === 'retry_wait';
+}
+
+function trackDownloadJob(downloadKey, jobId, title, source, url = '') {
+  if (!jobId) return;
+  state.trackedDownloadJobs.set(String(jobId), { key: downloadKey, title, source, url });
+  startDownloadPolling();
+  refreshDownloads();
+  renderSearchResults();
+}
+
 // ============================================================
 // DOWNLOAD
 // ============================================================
@@ -1897,6 +1928,7 @@ async function startDownload(result) {
       download_url: result.download_url || result.url || '',
       abb_url: result.abb_url || '',
       source: result.source,
+      source_id: result.source_id || '',
       md5: result.md5 || '',
       author: result.author || '',
       info_hash: result.info_hash || '',
@@ -1912,8 +1944,14 @@ async function startDownload(result) {
       setDownloadOutcome(downloadKey, 'loading', true);
       trackAnnaDownload(data.job_id, downloadKey, result.title, result.download_url || result.url || '');
     } else if (data.success || data.job_id) {
-      setDownloadOutcome(downloadKey, 'success');
-      showToast(t('download_started', {title: result.title}), 'success');
+      if (data.job_id) {
+        setDownloadOutcome(downloadKey, 'loading', true);
+        trackDownloadJob(downloadKey, data.job_id, result.title, result.source, result.download_url || result.url || '');
+        showToast(t('download_started', {title: result.title}), 'info');
+      } else {
+        setDownloadOutcome(downloadKey, 'success');
+        showToast(t('download_started', {title: result.title}), 'success');
+      }
     } else {
       if (result.source === 'annas' && isAnnaNoMatchError(data.error || '')) {
         setDownloadOutcome(downloadKey, 'error', true);
@@ -2054,7 +2092,7 @@ function syncTrackedDownloadJobs(jobs) {
     if (job.status === 'completed') {
       state.trackedDownloadJobs.delete(jobId);
       setDownloadOutcome(tracked.key, 'success');
-      showToast(t('download_completed', {title: tracked.title || job.title || 'Unknown'}), 'success');
+      showToast(t('download_complete', {title: tracked.title || job.title || t('unknown_title')}), 'success');
       continue;
     }
 
@@ -2086,13 +2124,9 @@ function trackAnnaDownload(jobId, downloadKey, title, url) {
       state.trackedDownloadJobs.delete(trackedJobId);
     }
   }
-  state.trackedDownloadJobs.set(String(jobId), { key: downloadKey, title, url: url || '' });
+  state.trackedDownloadJobs.set(String(jobId), { key: downloadKey, title, url: url || '', source: 'annas' });
   startDownloadPolling();
   refreshDownloads();
-}
-
-function isActiveDownloadStatus(status) {
-  return ['downloading', 'queued', 'searching', 'organizing', 'importing', 'retry_wait'].includes(status);
 }
 
 async function retryDownload(jobId) {

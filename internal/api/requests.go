@@ -466,6 +466,8 @@ func (s *Server) processApprovedRequest(req *models.Request) {
 	dlReq := models.DownloadRequest{
 		Source:           chosen.Source,
 		Title:            chosen.Title,
+		Author:           chosen.Author,
+		SourceID:         chosen.SourceID,
 		DownloadURL:      chosen.DownloadURL,
 		MagnetURL:        chosen.MagnetURL,
 		InfoHash:         chosen.InfoHash,
@@ -547,7 +549,7 @@ func (s *Server) processApprovedRequest(req *models.Request) {
 			if fileURL == "" {
 				fileURL = dlReq.URL
 			}
-			job, err := s.downloadMgr.StartDirectDownload(fileURL, dlReq.Title, dlReq.Source, "")
+			job, err := s.downloadMgr.StartDirectDownload(fileURL, dlReq.Title, dlReq.Source, dlReq.SourceID, dlReq.Author)
 			if err != nil {
 				s.failRequest(req, fmt.Sprintf("Download failed: %v", err))
 				return

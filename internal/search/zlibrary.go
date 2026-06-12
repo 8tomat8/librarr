@@ -9,12 +9,14 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/cookiejar"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/JeremiahM37/librarr/internal/config"
 	"github.com/JeremiahM37/librarr/internal/models"
+	"github.com/JeremiahM37/librarr/internal/zlibraryparse"
 )
 
 // ZLibrary searches the Z-Library external API for ebooks.
@@ -68,37 +70,12 @@ func (z *ZLibrary) apiBase() string {
 
 // --- Z-Library API response types ---
 
-type zlLoginResponse struct {
-	Success bool `json:"success"`
-	User    struct {
-		ID    int    `json:"id"`
-		Email string `json:"email"`
-	} `json:"user"`
-	Message string `json:"message,omitempty"`
-}
-
-type zlSearchResponse struct {
-	Success    bool     `json:"success"`
-	Result     []zlBook `json:"result"`
-	Pagination struct {
-		Page  int `json:"page"`
-		Total int `json:"total"`
-	} `json:"pagination"`
-	Error string `json:"error,omitempty"`
-}
-
-type zlBook struct {
-	ID          int    `json:"id"`
-	Hash        string `json:"hash"`
-	Title       string `json:"title"`
-	Author      string `json:"author"`
-	Extension   string `json:"extension"`
-	Filesize    int64  `json:"filesize"`
-	Language    string `json:"language"`
-	Year        string `json:"year"`
-	Pages       int    `json:"pages"`
-	Cover       string `json:"cover"`
-	Description string `json:"description,omitempty"`
+type zlRPCLoginResponse struct {
+	Errors   []string `json:"errors"`
+	Response struct {
+		UserID  int    `json:"user_id"`
+		UserKey string `json:"user_key"`
+	} `json:"response"`
 }
 
 type zlDomainsResponse struct {
@@ -117,23 +94,24 @@ func (z *ZLibrary) login(ctx context.Context) error {
 	}
 
 	baseURL := z.apiBase()
-	loginURL := fmt.Sprintf("%s/eapi/user/login", baseURL)
+	loginURL := fmt.Sprintf("%s/rpc.php", baseURL)
 
-	payload := map[string]string{
-		"email":    z.cfg.ZLibraryEmail,
-		"password": z.cfg.ZLibraryPassword,
-	}
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("zlibrary marshal login: %w", err)
-	}
+	form := url.Values{}
+	form.Set("isModal", "true")
+	form.Set("email", z.cfg.ZLibraryEmail)
+	form.Set("password", z.cfg.ZLibraryPassword)
+	form.Set("site_mode", "books")
+	form.Set("action", "login")
+	form.Set("redirectUrl", baseURL+"/")
+	form.Set("gg_json_mode", "1")
 
-	req, err := http.NewRequestWithContext(ctx, "POST", loginURL, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, "POST", loginURL, strings.NewReader(form.Encode()))
 	if err != nil {
 		return fmt.Errorf("zlibrary login request: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
 	req.Header.Set("User-Agent", z.cfg.UserAgent)
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 
 	resp, err := z.client.Do(req)
 	if err != nil {
@@ -145,13 +123,16 @@ func (z *ZLibrary) login(ctx context.Context) error {
 		return fmt.Errorf("zlibrary login HTTP %d", resp.StatusCode)
 	}
 
-	var loginResp zlLoginResponse
+	var loginResp zlRPCLoginResponse
 	if err := json.NewDecoder(resp.Body).Decode(&loginResp); err != nil {
 		return fmt.Errorf("zlibrary decode login: %w", err)
 	}
 
-	if !loginResp.Success {
-		return fmt.Errorf("zlibrary login failed: %s", loginResp.Message)
+	if len(loginResp.Errors) > 0 {
+		return fmt.Errorf("zlibrary login failed: %s", strings.Join(loginResp.Errors, "; "))
+	}
+	if loginResp.Response.UserID == 0 || loginResp.Response.UserKey == "" {
+		return fmt.Errorf("zlibrary login failed: missing session credentials")
 	}
 
 	z.loggedIn = true
@@ -207,21 +188,17 @@ func (z *ZLibrary) Search(ctx context.Context, query string) ([]models.SearchRes
 	baseURL := z.apiBase()
 	searchURL := fmt.Sprintf("%s/eapi/book/search", baseURL)
 
-	payload := map[string]interface{}{
-		"message": query,
-		"limit":   15,
-		"page":    1,
-	}
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return nil, fmt.Errorf("zlibrary marshal search: %w", err)
-	}
+	form := url.Values{}
+	form.Set("message", query)
+	form.Set("limit", "15")
+	form.Set("page", "1")
+	body := []byte(form.Encode())
 
 	req, err := http.NewRequestWithContext(ctx, "POST", searchURL, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("zlibrary search request: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("User-Agent", z.cfg.UserAgent)
 
 	resp, err := z.client.Do(req)
@@ -251,7 +228,7 @@ func (z *ZLibrary) Search(ctx context.Context, query string) ([]models.SearchRes
 		if err != nil {
 			return nil, err
 		}
-		req2.Header.Set("Content-Type", "application/json")
+		req2.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		req2.Header.Set("User-Agent", z.cfg.UserAgent)
 
 		resp2, err := z.client.Do(req2)
@@ -274,23 +251,25 @@ func (z *ZLibrary) Search(ctx context.Context, query string) ([]models.SearchRes
 		return nil, fmt.Errorf("zlibrary search HTTP %d: %s", resp.StatusCode, snippet)
 	}
 
-	var searchResp zlSearchResponse
-	if err := json.Unmarshal(respBody, &searchResp); err != nil {
+	books, err := zlibraryparse.BooksFromJSON(respBody)
+	if err != nil {
 		return nil, fmt.Errorf("zlibrary decode search: %w", err)
 	}
 
-	if !searchResp.Success {
-		return nil, fmt.Errorf("zlibrary search failed: %s", searchResp.Error)
-	}
-
 	var results []models.SearchResult
-	for _, book := range searchResp.Result {
+	for _, book := range books {
 		sizeHuman := formatZLSize(book.Filesize)
 		format := strings.ToUpper(book.Extension)
+		sourceID := fmt.Sprintf("zlibrary-%d", book.ID)
+		if book.Hash != "" {
+			sourceID = fmt.Sprintf("%s-%s", sourceID, book.Hash)
+		}
 
 		// Construct download URL using personal domain.
 		downloadURL := ""
-		if z.personalURL != "" && book.Hash != "" {
+		if book.DL != "" {
+			downloadURL = zlibraryparse.AbsoluteURL(baseURL, book.DL)
+		} else if z.personalURL != "" && book.Hash != "" {
 			downloadURL = fmt.Sprintf("%s/dl/%d/%s", z.personalURL, book.ID, book.Hash)
 		} else if z.personalURL != "" {
 			downloadURL = fmt.Sprintf("%s/dl/%d", z.personalURL, book.ID)
@@ -305,7 +284,7 @@ func (z *ZLibrary) Search(ctx context.Context, query string) ([]models.SearchRes
 			Source:      "zlibrary",
 			Title:       book.Title,
 			Author:      book.Author,
-			SourceID:    fmt.Sprintf("zlibrary-%d", book.ID),
+			SourceID:    sourceID,
 			CoverURL:    coverURL,
 			URL:         downloadURL,
 			DownloadURL: downloadURL,
