@@ -35,6 +35,29 @@ func proxyIdentityFromRequest(r *http.Request) string {
 	return ""
 }
 
+func isSecureRequest(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	proto := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-Proto"), ",")[0])
+	if strings.EqualFold(proto, "https") {
+		return true
+	}
+	return strings.Contains(strings.ToLower(r.Header.Get("Forwarded")), "proto=https")
+}
+
+func setSessionCookie(w http.ResponseWriter, r *http.Request, token string, maxAge int) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookieName,
+		Value:    token,
+		Path:     "/",
+		MaxAge:   maxAge,
+		HttpOnly: true,
+		Secure:   isSecureRequest(r),
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
 // resolveOIDCUser returns an existing Librarr user for the supplied SSO
 // identity, or auto-creates one when OIDC user provisioning is enabled.
 func resolveOIDCUser(cfg *config.Config, database *db.DB, username string) (*models.User, error) {
@@ -100,13 +123,6 @@ func ensureSessionForUser(w http.ResponseWriter, r *http.Request, sessions *Sess
 	}
 
 	token := sessions.Create(user.ID, user.Username, user.Role)
-	http.SetCookie(w, &http.Cookie{
-		Name:     sessionCookieName,
-		Value:    token,
-		Path:     "/",
-		MaxAge:   86400,
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-	})
+	setSessionCookie(w, r, token, 86400)
 	return true
 }

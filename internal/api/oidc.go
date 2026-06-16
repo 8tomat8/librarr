@@ -259,14 +259,7 @@ func (h *OIDCHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	h.db.UpdateLastLogin(user.ID)
 	sessionToken := h.sessions.Create(user.ID, user.Username, user.Role)
 
-	http.SetCookie(w, &http.Cookie{
-		Name:     "librarr_session",
-		Value:    sessionToken,
-		Path:     "/",
-		MaxAge:   86400,
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-	})
+	setSessionCookie(w, r, sessionToken, 86400)
 
 	// Redirect to app root.
 	http.Redirect(w, r, "/", http.StatusFound)

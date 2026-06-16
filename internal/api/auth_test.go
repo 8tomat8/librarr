@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -179,6 +180,58 @@ func TestHashBackupCode(t *testing.T) {
 
 	if len(hash1) != 64 {
 		t.Errorf("expected SHA-256 hex length 64, got %d", len(hash1))
+	}
+}
+
+func TestSetSessionCookieSecureFlag(t *testing.T) {
+	tests := []struct {
+		name       string
+		configure  func(*http.Request)
+		wantSecure bool
+	}{
+		{
+			name: "plain HTTP dev request",
+		},
+		{
+			name: "direct TLS request",
+			configure: func(r *http.Request) {
+				r.TLS = &tls.ConnectionState{}
+			},
+			wantSecure: true,
+		},
+		{
+			name: "reverse proxy HTTPS request",
+			configure: func(r *http.Request) {
+				r.Header.Set("X-Forwarded-Proto", "https")
+			},
+			wantSecure: true,
+		},
+		{
+			name: "standard forwarded HTTPS request",
+			configure: func(r *http.Request) {
+				r.Header.Set("Forwarded", "for=192.0.2.60;proto=https;host=books.example.com")
+			},
+			wantSecure: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
+			if tt.configure != nil {
+				tt.configure(req)
+			}
+			rr := httptest.NewRecorder()
+			setSessionCookie(rr, req, "token", 86400)
+
+			cookies := rr.Result().Cookies()
+			if len(cookies) != 1 {
+				t.Fatalf("cookie count = %d, want 1", len(cookies))
+			}
+			if cookies[0].Secure != tt.wantSecure {
+				t.Fatalf("Secure = %v, want %v", cookies[0].Secure, tt.wantSecure)
+			}
+		})
 	}
 }
 
