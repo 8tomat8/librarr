@@ -212,6 +212,30 @@ func authMiddleware(cfg *config.Config, database *db.DB, sessions *SessionStore,
 		userCount, _ := database.CountUsers()
 		multiUser := userCount > 0
 
+		// Trusted reverse-proxy SSO headers should short-circuit the normal
+		// login flow when OIDC is configured. This lets Authentik-backed
+		// deployments log users in transparently instead of requiring a second
+		// click on the Librarr login button.
+		if cfg != nil && cfg.HasOIDCProxyHeaders() {
+			username := proxyIdentityFromRequest(r)
+			if username != "" {
+				if user, err := resolveOIDCUser(cfg, database, username); err == nil && user != nil {
+					if sessions != nil {
+						if ensureSessionForUser(w, r, sessions, user) {
+							_ = database.UpdateLastLogin(user.ID)
+						}
+					}
+					ctx := context.WithValue(r.Context(), ctxUserID, user.ID)
+					ctx = context.WithValue(ctx, ctxUserRole, user.Role)
+					ctx = context.WithValue(ctx, ctxUsername, user.Username)
+					next.ServeHTTP(w, r.WithContext(ctx))
+					return
+				} else if err != nil && cfg != nil && cfg.HasOIDC() {
+					slog.Warn("proxy SSO login rejected", "username", username, "error", err)
+				}
+			}
+		}
+
 		// If no multi-user and no legacy auth, pass through.
 		if !multiUser && !cfg.HasAuth() && !cfg.HasAPIKey() {
 			next.ServeHTTP(w, r)
@@ -649,8 +673,19 @@ func handleAuthStatus(cfg *config.Config, database *db.DB, sessions *SessionStor
 			resp["oidc_provider_name"] = cfg.OIDCProviderName
 		}
 
+		if username, _ := r.Context().Value(ctxUsername).(string); username != "" {
+			resp["authenticated"] = true
+			resp["username"] = username
+		}
+		if role, _ := r.Context().Value(ctxUserRole).(string); role != "" {
+			resp["role"] = role
+		}
+		if userID, _ := r.Context().Value(ctxUserID).(int64); userID != 0 {
+			resp["user_id"] = userID
+		}
+
 		// Check session.
-		cookie, err := r.Cookie("librarr_session")
+		cookie, err := r.Cookie(sessionCookieName)
 		if err == nil {
 			if data, ok := sessions.Get(cookie.Value); ok {
 				resp["authenticated"] = true

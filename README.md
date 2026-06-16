@@ -203,6 +203,15 @@ All configuration is via environment variables. Every variable has a sensible de
 | `OIDC_REDIRECT_URI` | | Callback URL (`https://librarr.example.com/auth/oidc/callback`) |
 | `OIDC_AUTO_CREATE_USERS` | `true` | Auto-create users on first OIDC login |
 | `OIDC_DEFAULT_ROLE` | `user` | Default role for OIDC-created users |
+| `OIDC_PROXY_HEADERS_ENABLED` | `false` | Trust Authentik identity headers from a reverse proxy |
+
+When `OIDC_PROXY_HEADERS_ENABLED=true` and Librarr sits behind a trusted reverse
+proxy that injects Authentik headers like `X-Authentik-Username`, it will treat
+those requests as an authenticated SSO session, auto-provision the local user if
+needed, and skip the manual "Login with SSO" click. Enable this only for
+proxy-gated deployments.
+Local logout only clears Librarr's session cookie; if the proxy keeps sending
+the identity header, the next request will sign the browser back in.
 
 ### Download Clients
 

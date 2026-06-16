@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -312,5 +313,212 @@ func TestHandleAuthStatus_OIDCHints(t *testing.T) {
 				t.Errorf("oidc_provider_name MUST be absent when OIDC is disabled, got %v", resp["oidc_provider_name"])
 			}
 		})
+	}
+}
+
+func newOIDCTestConfig() *config.Config {
+	return &config.Config{
+		OIDCEnabled:         true,
+		OIDCIssuer:          "https://idp.example.com",
+		OIDCClientID:        "client",
+		OIDCClientSecret:    "secret",
+		OIDCAutoCreateUsers: true,
+		OIDCDefaultRole:     "user",
+		OIDCProxyHeaders:    true,
+	}
+}
+
+func TestAuthMiddleware_AcceptsAuthentikProxyHeaders(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.New(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("create test db: %v", err)
+	}
+	t.Cleanup(func() { database.Close() })
+	sessions := NewSessionStore()
+
+	var gotUsername, gotRole string
+	var gotUserID int64
+	handler := authMiddleware(newOIDCTestConfig(), database, sessions, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotUserID = getUserIDFromContext(r)
+		gotUsername, _ = r.Context().Value(ctxUsername).(string)
+		gotRole, _ = r.Context().Value(ctxUserRole).(string)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
+	req.Header.Set("X-Authentik-Username", "alice")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204; body=%s", rr.Code, rr.Body.String())
+	}
+	if gotUsername != "alice" {
+		t.Fatalf("username = %q, want alice", gotUsername)
+	}
+	if gotRole != "admin" {
+		t.Fatalf("role = %q, want admin for first SSO user", gotRole)
+	}
+	if gotUserID == 0 {
+		t.Fatal("expected a resolved user ID")
+	}
+	if _, err := database.GetUserByUsername("alice"); err != nil {
+		t.Fatalf("expected alice user to be created: %v", err)
+	}
+
+	var sessionCookie bool
+	for _, cookie := range rr.Result().Cookies() {
+		if cookie.Name == sessionCookieName {
+			sessionCookie = true
+			break
+		}
+	}
+	if !sessionCookie {
+		t.Fatal("expected proxy-auth login to set a session cookie")
+	}
+}
+
+func TestAuthMiddleware_IgnoresAuthentikHeadersWhenOIDCDisabled(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.New(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("create test db: %v", err)
+	}
+	t.Cleanup(func() { database.Close() })
+	sessions := NewSessionStore()
+
+	hash, err := hashPassword("password")
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	if _, err := database.CreateUser("existing", hash, "admin"); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+
+	called := false
+	handler := authMiddleware(&config.Config{}, database, sessions, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
+	req.Header.Set("X-Authentik-Username", "alice")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if called {
+		t.Fatal("expected proxy header to be ignored when OIDC is disabled")
+	}
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", rr.Code)
+	}
+}
+
+func TestAuthMiddleware_IgnoresAuthentikHeadersWhenProxyHeadersDisabled(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.New(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("create test db: %v", err)
+	}
+	t.Cleanup(func() { database.Close() })
+	sessions := NewSessionStore()
+
+	hash, err := hashPassword("password")
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	if _, err := database.CreateUser("existing", hash, "admin"); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+
+	cfg := newOIDCTestConfig()
+	cfg.OIDCProxyHeaders = false
+
+	called := false
+	handler := authMiddleware(cfg, database, sessions, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
+	req.Header.Set("X-Authentik-Username", "alice")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if called {
+		t.Fatal("expected proxy header to be ignored when proxy header auth is disabled")
+	}
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", rr.Code)
+	}
+}
+
+func TestHandleAuthStatus_AuthentikProxyHeaders(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.New(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("create test db: %v", err)
+	}
+	t.Cleanup(func() { database.Close() })
+	sessions := NewSessionStore()
+
+	user, err := resolveOIDCUser(newOIDCTestConfig(), database, "alice")
+	if err != nil {
+		t.Fatalf("seed SSO user: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/status", nil)
+	req.Header.Set("X-Authentik-Username", "alice")
+	req = req.WithContext(context.WithValue(req.Context(), ctxUserID, user.ID))
+	req = req.WithContext(context.WithValue(req.Context(), ctxUsername, user.Username))
+	req = req.WithContext(context.WithValue(req.Context(), ctxUserRole, user.Role))
+	rr := httptest.NewRecorder()
+	handleAuthStatus(newOIDCTestConfig(), database, sessions)(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rr.Code, rr.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if got, _ := resp["authenticated"].(bool); !got {
+		t.Fatalf("authenticated = %v, want true", got)
+	}
+	if got, _ := resp["username"].(string); got != "alice" {
+		t.Fatalf("username = %q, want alice", got)
+	}
+	if got, _ := resp["role"].(string); got != "admin" {
+		t.Fatalf("role = %q, want admin", got)
+	}
+	if got, _ := resp["user_id"].(float64); got == 0 {
+		t.Fatal("expected a resolved user_id")
+	}
+}
+
+func TestHandleAuthStatus_ProxyHeaderDoesNotCreateUser(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.New(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("create test db: %v", err)
+	}
+	t.Cleanup(func() { database.Close() })
+	sessions := NewSessionStore()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/status", nil)
+	req.Header.Set("X-Authentik-Username", "alice")
+	rr := httptest.NewRecorder()
+	handleAuthStatus(newOIDCTestConfig(), database, sessions)(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rr.Code, rr.Body.String())
+	}
+	count, err := database.CountUsers()
+	if err != nil {
+		t.Fatalf("count users: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("user count = %d, want 0", count)
 	}
 }
