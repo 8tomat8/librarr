@@ -148,6 +148,7 @@ type Config struct {
 	OIDCRedirectURI     string
 	OIDCAutoCreateUsers bool
 	OIDCDefaultRole     string
+	OIDCProxyHeaders    bool
 
 	// Deluge
 	DelugeURL      string
@@ -364,6 +365,7 @@ func buildFromEnv() *Config {
 		OIDCRedirectURI:     getEnv("OIDC_REDIRECT_URI", ""),
 		OIDCAutoCreateUsers: getEnvBool("OIDC_AUTO_CREATE_USERS", true),
 		OIDCDefaultRole:     getEnv("OIDC_DEFAULT_ROLE", "user"),
+		OIDCProxyHeaders:    getEnvBool("OIDC_PROXY_HEADERS_ENABLED", false),
 
 		DelugeURL:      getEnv("DELUGE_URL", ""),
 		DelugePassword: getEnv("DELUGE_PASSWORD", ""),
@@ -395,6 +397,11 @@ func buildFromEnv() *Config {
 // HasOIDC returns true if OIDC/SSO is configured.
 func (c *Config) HasOIDC() bool {
 	return c.OIDCEnabled && c.OIDCIssuer != "" && c.OIDCClientID != "" && c.OIDCClientSecret != ""
+}
+
+// HasOIDCProxyHeaders returns true when reverse-proxy SSO headers should be trusted.
+func (c *Config) HasOIDCProxyHeaders() bool {
+	return c.HasOIDC() && c.OIDCProxyHeaders
 }
 
 // HasQBittorrent returns true if qBittorrent is configured.

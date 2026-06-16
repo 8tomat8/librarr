@@ -15,6 +15,8 @@ services:
     environment:
       - LIBRARR_PORT=5050
       - LIBRARR_DB_PATH=/data/librarr.db
+      # Set to true only when a trusted reverse proxy injects Authentik headers.
+      - OIDC_PROXY_HEADERS_ENABLED=false
 
 volumes:
   librarr-data:
