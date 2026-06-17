@@ -15,6 +15,9 @@ services:
     environment:
       - LIBRARR_PORT=5050
       - LIBRARR_DB_PATH=/data/librarr.db
+      - WISHLIST_CLEANUP_ENABLED=false
+      - WISHLIST_CLEANUP_INTERVAL_HOURS=12
+      - WISHLIST_CLEANUP_DRY_RUN=true
 
 volumes:
   librarr-data:
