@@ -303,6 +303,9 @@ Legacy per-source env vars (e.g. `PROWLARR_URL` and other per-driver overrides) 
 | `RATE_LIMIT_ENABLED` | `true` | Per-source rate limiting |
 | `METRICS_ENABLED` | `true` | Prometheus metrics endpoint |
 | `WEBNOVEL_ENABLED` | `true` | Web novel search (requires lncrawl container) |
+| `WISHLIST_CLEANUP_ENABLED` | `false` | Periodically remove wishlist items already found in the library |
+| `WISHLIST_CLEANUP_INTERVAL_HOURS` | `12` | Hours between wishlist cleanup scans |
+| `WISHLIST_CLEANUP_DRY_RUN` | `true` | Log conservative wishlist cleanup matches without deleting |
 | `MANGADEX_ENABLED` | `true` | MangaDex search |
 | `AUTHOR_MONITOR_ENABLED` | `false` | Background author monitoring |
 

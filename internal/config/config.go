@@ -172,6 +172,12 @@ type Config struct {
 	SchedulerAutoDownload  bool
 	SchedulerMinScore      int
 
+	// Wishlist cleanup removes wishlist rows that are already present in the
+	// library. It is intentionally opt-in and dry-run by default.
+	WishlistCleanupEnabled       bool
+	WishlistCleanupIntervalHours int
+	WishlistCleanupDryRun        bool
+
 	// Quality Profiles
 	AutoUpgradeEnabled bool
 
@@ -384,6 +390,10 @@ func buildFromEnv() *Config {
 		SchedulerAutoDownload:  getEnvBool("SCHEDULER_AUTO_DOWNLOAD", false),
 		SchedulerMinScore:      getEnvInt("SCHEDULER_MIN_SCORE", 70),
 
+		WishlistCleanupEnabled:       getEnvBool("WISHLIST_CLEANUP_ENABLED", false),
+		WishlistCleanupIntervalHours: getEnvInt("WISHLIST_CLEANUP_INTERVAL_HOURS", 12),
+		WishlistCleanupDryRun:        getEnvBool("WISHLIST_CLEANUP_DRY_RUN", true),
+
 		AutoUpgradeEnabled: getEnvBool("AUTO_UPGRADE_ENABLED", false),
 
 		RenameEnabled: getEnvBool("RENAME_ENABLED", false),
@@ -548,6 +558,8 @@ func (c *Config) applySettingsFileOverrides() {
 		"zlibrary_enabled":            &c.ZLibraryEnabled,
 		"remove_torrent_after_import": &c.RemoveTorrentAfterImport,
 		"foreign_lang_filter":         &c.ForeignLangFilter,
+		"wishlist_cleanup_enabled":    &c.WishlistCleanupEnabled,
+		"wishlist_cleanup_dry_run":    &c.WishlistCleanupDryRun,
 	}
 	for key, fieldPtr := range boolPtrs {
 		v, ok := raw[key]
@@ -559,6 +571,26 @@ func (c *Config) applySettingsFileOverrides() {
 			continue
 		}
 		*fieldPtr = b
+	}
+
+	intPtrs := map[string]*int{
+		"wishlist_cleanup_interval_hours": &c.WishlistCleanupIntervalHours,
+	}
+	for key, fieldPtr := range intPtrs {
+		v, ok := raw[key]
+		if !ok {
+			continue
+		}
+		switch n := v.(type) {
+		case float64:
+			if n >= 1 {
+				*fieldPtr = int(n)
+			}
+		case int:
+			if n >= 1 {
+				*fieldPtr = n
+			}
+		}
 	}
 }
 
