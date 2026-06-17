@@ -212,6 +212,30 @@ func authMiddleware(cfg *config.Config, database *db.DB, sessions *SessionStore,
 		userCount, _ := database.CountUsers()
 		multiUser := userCount > 0
 
+		// Trusted reverse-proxy SSO headers should short-circuit the normal
+		// login flow when OIDC is configured. This lets Authentik-backed
+		// deployments log users in transparently instead of requiring a second
+		// click on the Librarr login button.
+		if cfg != nil && cfg.HasOIDCProxyHeaders() {
+			username := proxyIdentityFromRequest(r)
+			if username != "" {
+				if user, err := resolveOIDCUser(cfg, database, username); err == nil && user != nil {
+					if sessions != nil {
+						if ensureSessionForUser(w, r, sessions, user) {
+							_ = database.UpdateLastLogin(user.ID)
+						}
+					}
+					ctx := context.WithValue(r.Context(), ctxUserID, user.ID)
+					ctx = context.WithValue(ctx, ctxUserRole, user.Role)
+					ctx = context.WithValue(ctx, ctxUsername, user.Username)
+					next.ServeHTTP(w, r.WithContext(ctx))
+					return
+				} else if err != nil && cfg != nil && cfg.HasOIDC() {
+					slog.Warn("proxy SSO login rejected", "username", username, "error", err)
+				}
+			}
+		}
+
 		// If no multi-user and no legacy auth, pass through.
 		if !multiUser && !cfg.HasAuth() && !cfg.HasAPIKey() {
 			next.ServeHTTP(w, r)
@@ -357,14 +381,7 @@ func handleLogin(cfg *config.Config, database *db.DB, sessions *SessionStore) ht
 			// No TOTP — create full session.
 			database.UpdateLastLogin(user.ID)
 			token := sessions.Create(user.ID, user.Username, user.Role)
-			http.SetCookie(w, &http.Cookie{
-				Name:     "librarr_session",
-				Value:    token,
-				Path:     "/",
-				MaxAge:   86400,
-				HttpOnly: true,
-				SameSite: http.SameSiteLaxMode,
-			})
+			setSessionCookie(w, r, token, 86400)
 
 			database.LogActivity(user.Username, "login", user.Username, "User logged in")
 
@@ -395,14 +412,7 @@ func handleLogin(cfg *config.Config, database *db.DB, sessions *SessionStore) ht
 		}
 
 		token := sessions.Create(0, cfg.AuthUsername, "admin")
-		http.SetCookie(w, &http.Cookie{
-			Name:     "librarr_session",
-			Value:    token,
-			Path:     "/",
-			MaxAge:   86400,
-			HttpOnly: true,
-			SameSite: http.SameSiteLaxMode,
-		})
+		setSessionCookie(w, r, token, 86400)
 
 		database.LogActivity(cfg.AuthUsername, "login", cfg.AuthUsername, "User logged in (legacy)")
 
@@ -452,14 +462,7 @@ func handleLoginTOTP(database *db.DB, sessions *SessionStore) http.HandlerFunc {
 		if validateTOTPCode(user.TOTPSecret, req.Code) {
 			database.UpdateLastLogin(user.ID)
 			token := sessions.Create(user.ID, user.Username, user.Role)
-			http.SetCookie(w, &http.Cookie{
-				Name:     "librarr_session",
-				Value:    token,
-				Path:     "/",
-				MaxAge:   86400,
-				HttpOnly: true,
-				SameSite: http.SameSiteLaxMode,
-			})
+			setSessionCookie(w, r, token, 86400)
 			writeJSON(w, http.StatusOK, map[string]interface{}{
 				"success":  true,
 				"token":    token,
@@ -475,14 +478,7 @@ func handleLoginTOTP(database *db.DB, sessions *SessionStore) http.HandlerFunc {
 		if used {
 			database.UpdateLastLogin(user.ID)
 			token := sessions.Create(user.ID, user.Username, user.Role)
-			http.SetCookie(w, &http.Cookie{
-				Name:     "librarr_session",
-				Value:    token,
-				Path:     "/",
-				MaxAge:   86400,
-				HttpOnly: true,
-				SameSite: http.SameSiteLaxMode,
-			})
+			setSessionCookie(w, r, token, 86400)
 			writeJSON(w, http.StatusOK, map[string]interface{}{
 				"success":          true,
 				"token":            token,
@@ -603,14 +599,7 @@ func handleRegister(database *db.DB, sessions *SessionStore) http.HandlerFunc {
 		if isFirstUser {
 			database.UpdateLastLogin(id)
 			token := sessions.Create(id, req.Username, role)
-			http.SetCookie(w, &http.Cookie{
-				Name:     "librarr_session",
-				Value:    token,
-				Path:     "/",
-				MaxAge:   86400,
-				HttpOnly: true,
-				SameSite: http.SameSiteLaxMode,
-			})
+			setSessionCookie(w, r, token, 86400)
 			writeJSON(w, http.StatusCreated, map[string]interface{}{
 				"success":  true,
 				"id":       id,
@@ -649,8 +638,19 @@ func handleAuthStatus(cfg *config.Config, database *db.DB, sessions *SessionStor
 			resp["oidc_provider_name"] = cfg.OIDCProviderName
 		}
 
+		if username, _ := r.Context().Value(ctxUsername).(string); username != "" {
+			resp["authenticated"] = true
+			resp["username"] = username
+		}
+		if role, _ := r.Context().Value(ctxUserRole).(string); role != "" {
+			resp["role"] = role
+		}
+		if userID, _ := r.Context().Value(ctxUserID).(int64); userID != 0 {
+			resp["user_id"] = userID
+		}
+
 		// Check session.
-		cookie, err := r.Cookie("librarr_session")
+		cookie, err := r.Cookie(sessionCookieName)
 		if err == nil {
 			if data, ok := sessions.Get(cookie.Value); ok {
 				resp["authenticated"] = true
@@ -923,14 +923,7 @@ func handleLogout(sessions *SessionStore, database *db.DB) http.HandlerFunc {
 			sessions.Delete(cookie.Value)
 		}
 		database.LogActivity(username, "logout", username, "User logged out")
-		http.SetCookie(w, &http.Cookie{
-			Name:     "librarr_session",
-			Value:    "",
-			Path:     "/",
-			MaxAge:   -1,
-			HttpOnly: true,
-			SameSite: http.SameSiteLaxMode,
-		})
+		setSessionCookie(w, r, "", -1)
 		writeJSON(w, http.StatusOK, map[string]interface{}{"success": true})
 	}
 }

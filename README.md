@@ -203,6 +203,15 @@ All configuration is via environment variables. Every variable has a sensible de
 | `OIDC_REDIRECT_URI` | | Callback URL (`https://librarr.example.com/auth/oidc/callback`) |
 | `OIDC_AUTO_CREATE_USERS` | `true` | Auto-create users on first OIDC login |
 | `OIDC_DEFAULT_ROLE` | `user` | Default role for OIDC-created users |
+| `OIDC_PROXY_HEADERS_ENABLED` | `false` | Trust Authentik identity headers from a reverse proxy |
+
+When `OIDC_PROXY_HEADERS_ENABLED=true` and Librarr sits behind a trusted reverse
+proxy that injects Authentik headers like `X-Authentik-Username`, it will treat
+those requests as an authenticated SSO session, auto-provision the local user if
+needed, and skip the manual "Login with SSO" click. Enable this only for
+proxy-gated deployments.
+Local logout only clears Librarr's session cookie; if the proxy keeps sending
+the identity header, the next request will sign the browser back in.
 
 ### Download Clients
 
@@ -218,6 +227,7 @@ All configuration is via environment variables. Every variable has a sensible de
 | `QB_MANGA_SAVE_PATH` | `/manga-incoming` | Manga download path |
 | `QB_MANGA_CATEGORY` | `manga` | Torrent category for manga |
 | `QB_PRIORITY` | `1` | Download client priority (lower = preferred) |
+| `REMOVE_TORRENT_AFTER_IMPORT` | `true` | Remove torrent from qBittorrent after a successful import. Set to `false` to keep seeding (required for private trackers with seed-time minimums). |
 | `SABNZBD_URL` | | SABnzbd URL |
 | `SABNZBD_API_KEY` | | SABnzbd API key |
 | `SABNZBD_CATEGORY` | `librarr` | NZB download category |

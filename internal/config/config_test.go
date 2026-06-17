@@ -14,6 +14,7 @@ func TestLoad_Defaults(t *testing.T) {
 		"MIN_TORRENT_SIZE_BYTES", "MAX_TORRENT_SIZE_BYTES",
 		"AUTH_USERNAME", "AUTH_PASSWORD", "API_KEY",
 		"OIDC_ENABLED", "OIDC_ISSUER", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET",
+		"OIDC_PROXY_HEADERS_ENABLED",
 	} {
 		os.Unsetenv(key)
 	}
@@ -65,6 +66,12 @@ func TestLoad_Defaults(t *testing.T) {
 		}
 	})
 
+	t.Run("OIDC proxy headers disabled by default", func(t *testing.T) {
+		if cfg.OIDCProxyHeaders {
+			t.Error("expected OIDCProxyHeaders=false by default")
+		}
+	})
+
 	t.Run("rate limit enabled by default", func(t *testing.T) {
 		if !cfg.RateLimitEnabled {
 			t.Error("expected RateLimitEnabled=true by default")
@@ -79,10 +86,12 @@ func TestLoad_EnvOverrides(t *testing.T) {
 	os.Setenv("FILE_ORG_ENABLED", "false")
 	os.Setenv("ANNAS_ARCHIVE_DOMAIN", "annas-archive.org")
 	os.Setenv("MIN_TORRENT_SIZE_BYTES", "50000")
+	os.Setenv("OIDC_PROXY_HEADERS_ENABLED", "true")
 	defer func() {
 		for _, key := range []string{
 			"LIBRARR_PORT", "LIBRARR_DB_PATH", "QB_URL",
 			"FILE_ORG_ENABLED", "ANNAS_ARCHIVE_DOMAIN", "MIN_TORRENT_SIZE_BYTES",
+			"OIDC_PROXY_HEADERS_ENABLED",
 		} {
 			os.Unsetenv(key)
 		}
@@ -107,6 +116,9 @@ func TestLoad_EnvOverrides(t *testing.T) {
 	}
 	if cfg.MinTorrentSizeBytes != 50000 {
 		t.Errorf("expected 50000, got %d", cfg.MinTorrentSizeBytes)
+	}
+	if !cfg.OIDCProxyHeaders {
+		t.Error("expected OIDCProxyHeaders=true with env override")
 	}
 }
 

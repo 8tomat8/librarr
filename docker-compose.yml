@@ -18,6 +18,8 @@ services:
       - WISHLIST_CLEANUP_ENABLED=false
       - WISHLIST_CLEANUP_INTERVAL_HOURS=12
       - WISHLIST_CLEANUP_DRY_RUN=true
+      # Set to true only when a trusted reverse proxy injects Authentik headers.
+      - OIDC_PROXY_HEADERS_ENABLED=false
 
 volumes:
   librarr-data:

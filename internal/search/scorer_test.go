@@ -128,6 +128,18 @@ func TestScoreResult_SizeAudiobook(t *testing.T) {
 	}
 }
 
+func TestScoreResult_SizeProwlarrAudiobookWithoutMediaType(t *testing.T) {
+	result := models.SearchResult{
+		Title:  "Test Audiobook",
+		Source: "prowlarr_audiobooks",
+		Size:   500e6, // 500MB
+	}
+	sb := ScoreResult(result, "test audiobook", "")
+	if sb.SizeScore != 10 {
+		t.Errorf("500MB prowlarr audiobook should score 10, got %f", sb.SizeScore)
+	}
+}
+
 func TestScoreResult_ConfidenceLevels(t *testing.T) {
 	tests := []struct {
 		name     string

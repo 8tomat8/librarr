@@ -3,6 +3,7 @@ package download
 import (
 	"io"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -189,6 +190,47 @@ func TestDownloadFile_UnknownFormatKeepsOriginalExt(t *testing.T) {
 	// should keep .pdf (the content-type-derived extension).
 	if !strings.HasSuffix(filePath, ".pdf") {
 		t.Errorf("unknown content should keep content-type extension .pdf, got: %s", filePath)
+	}
+}
+
+func TestResolveZLibraryBookFromSearchAcceptsResultShape(t *testing.T) {
+	var searchCalled bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/eapi/book/search":
+			searchCalled = true
+			if err := r.ParseForm(); err != nil {
+				t.Fatalf("ParseForm: %v", err)
+			}
+			if got := r.Form.Get("message"); got != "Seascraper Benjamin Wood" {
+				t.Fatalf("message = %q", got)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"success":1,"result":[{"id":118708376,"title":"Seascraper","author":"Benjamin Wood","dl":"/dl/from-result"}]}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("cookiejar: %v", err)
+	}
+	cfg := &config.Config{IncomingDir: t.TempDir(), UserAgent: "test"}
+	d := NewDirectDownloader(cfg, server.Client())
+	client := server.Client()
+	client.Jar = jar
+
+	resolved, err := d.resolveZLibraryBookFromSearch(client, server.URL, "Seascraper", "Benjamin Wood")
+	if err != nil {
+		t.Fatalf("resolveZLibraryBookFromSearch: %v", err)
+	}
+	if !searchCalled {
+		t.Fatal("search endpoint was not called")
+	}
+	if resolved != server.URL+"/dl/from-result" {
+		t.Fatalf("resolved = %q", resolved)
 	}
 }
 
