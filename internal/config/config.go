@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/JeremiahM37/librarr/internal/sources"
 )
@@ -158,6 +159,10 @@ type Config struct {
 	TransmissionURL  string
 	TransmissionUser string
 	TransmissionPass string
+
+	// TorrentClient explicitly selects the active torrent backend
+	// ("qbittorrent" or "transmission"). Empty means auto-detect.
+	TorrentClient string
 
 	// User Agent
 	UserAgent string
@@ -380,6 +385,8 @@ func buildFromEnv() *Config {
 		TransmissionUser: getEnv("TRANSMISSION_USER", ""),
 		TransmissionPass: getEnv("TRANSMISSION_PASS", ""),
 
+		TorrentClient: getEnv("TORRENT_CLIENT", ""),
+
 		UserAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
 
 		WebhookURL:  getEnv("WEBHOOK_URL", ""),
@@ -469,6 +476,37 @@ func (c *Config) HasTransmission() bool {
 	return c.TransmissionURL != ""
 }
 
+// HasTorrentClient returns true if any torrent download backend is configured.
+func (c *Config) HasTorrentClient() bool {
+	return c.HasQBittorrent() || c.HasTransmission()
+}
+
+// ActiveTorrentClient resolves which torrent backend handles torrents:
+//   - an explicit, configured TORRENT_CLIENT wins ("qbittorrent"/"qbit"/"qb"
+//     or "transmission");
+//   - otherwise qBittorrent is preferred for backward compatibility;
+//   - otherwise Transmission if it alone is configured;
+//   - else "" (no torrent client).
+func (c *Config) ActiveTorrentClient() string {
+	switch strings.ToLower(strings.TrimSpace(c.TorrentClient)) {
+	case "qbittorrent", "qbit", "qb":
+		if c.HasQBittorrent() {
+			return "qbittorrent"
+		}
+	case "transmission":
+		if c.HasTransmission() {
+			return "transmission"
+		}
+	}
+	if c.HasQBittorrent() {
+		return "qbittorrent"
+	}
+	if c.HasTransmission() {
+		return "transmission"
+	}
+	return ""
+}
+
 // HasFlibusta returns true if Flibusta is configured and enabled.
 func (c *Config) HasFlibusta() bool {
 	return c.FlibustaEnabled && c.FlibustaURL != ""
@@ -505,6 +543,10 @@ func (c *Config) applySettingsFileOverrides() {
 		"qb_url":                    &c.QBUrl,
 		"qb_user":                   &c.QBUser,
 		"qb_pass":                   &c.QBPass,
+		"transmission_url":          &c.TransmissionURL,
+		"transmission_user":         &c.TransmissionUser,
+		"transmission_pass":         &c.TransmissionPass,
+		"torrent_client":            &c.TorrentClient,
 		"prowlarr_url":              &c.ProwlarrURL,
 		"prowlarr_api_key":          &c.ProwlarrAPIKey,
 		"sabnzbd_url":               &c.SABnzbdURL,

@@ -483,6 +483,37 @@ tailwind.config = {
             </div>
           </div>
 
+          <!-- Transmission -->
+          <div class="bg-slate-800/40 rounded-lg p-4">
+            <div class="flex items-center justify-between mb-3">
+              <h4 class="text-sm font-medium text-slate-200">Transmission</h4>
+              <button onclick="saveIntegration('transmission')" class="px-3 py-1.5 text-xs bg-indigo-600 hover:bg-indigo-500 text-white rounded-md transition-colors">Save</button>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">URL</label>
+                <input type="text" id="setting-transmission_url" class="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200 placeholder-slate-600" placeholder="http://transmission:9091">
+              </div>
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">Username</label>
+                <input type="text" id="setting-transmission_user" autocomplete="off" data-1p-ignore data-lpignore="true" class="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200 placeholder-slate-600" placeholder="(optional)">
+              </div>
+              <div>
+                <label class="block text-xs text-slate-500 mb-1">Password</label>
+                <input type="password" id="setting-transmission_pass" autocomplete="off" data-1p-ignore data-lpignore="true" class="w-full bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200 placeholder-slate-600" placeholder="(optional)">
+              </div>
+            </div>
+            <div class="mt-3">
+              <label class="block text-xs text-slate-500 mb-1">Active torrent client</label>
+              <select id="setting-torrent_client" class="w-full md:w-1/3 bg-slate-900 border border-slate-700 rounded-md px-3 py-2 text-sm text-slate-200">
+                <option value="">Auto (qBittorrent preferred)</option>
+                <option value="qbittorrent">qBittorrent</option>
+                <option value="transmission">Transmission</option>
+              </select>
+              <p class="text-xs text-slate-500 mt-1">Only matters when both qBittorrent and Transmission are configured. Restart the container after changing.</p>
+            </div>
+          </div>
+
           <!-- SABnzbd -->
           <div class="bg-slate-800/40 rounded-lg p-4">
             <div class="flex items-center justify-between mb-3">
@@ -604,6 +635,13 @@ tailwind.config = {
             <div class="flex items-center gap-2">
               <span id="test-qbittorrent-status" class="text-xs text-slate-500" data-i18n="not_tested">Not tested</span>
               <button onclick="testConnection('qbittorrent')" class="px-2.5 py-1 text-xs bg-slate-700 hover:bg-slate-600 text-slate-300 rounded transition-colors" data-i18n="btn_test">Test</button>
+            </div>
+          </div>
+          <div class="flex items-center justify-between bg-slate-800/50 rounded-lg px-4 py-3">
+            <span class="text-sm text-slate-300" data-i18n="conn_transmission">Transmission</span>
+            <div class="flex items-center gap-2">
+              <span id="test-transmission-status" class="text-xs text-slate-500" data-i18n="not_tested">Not tested</span>
+              <button onclick="testConnection('transmission')" class="px-2.5 py-1 text-xs bg-slate-700 hover:bg-slate-600 text-slate-300 rounded transition-colors" data-i18n="btn_test">Test</button>
             </div>
           </div>
           <div class="flex items-center justify-between bg-slate-800/50 rounded-lg px-4 py-3">
@@ -824,6 +862,7 @@ const I18N = {
     s_connection_tests: 'Connection Tests',
     conn_prowlarr: 'Prowlarr',
     conn_qbittorrent: 'qBittorrent',
+    conn_transmission: 'Transmission',
     conn_sabnzbd: 'SABnzbd',
     conn_audiobookshelf: 'Audiobookshelf',
     conn_kavita: 'Kavita',
@@ -1024,6 +1063,7 @@ const I18N = {
     s_connection_tests: 'Проверка подключений',
     conn_prowlarr: 'Prowlarr',
     conn_qbittorrent: 'qBittorrent',
+    conn_transmission: 'Transmission',
     conn_sabnzbd: 'SABnzbd',
     conn_audiobookshelf: 'Audiobookshelf',
     conn_kavita: 'Kavita',
@@ -2615,6 +2655,7 @@ document.getElementById('change-password-form').addEventListener('submit', async
 const INTEGRATION_FIELDS = {
   prowlarr:       ['prowlarr_url', 'prowlarr_api_key'],
   qbittorrent:    ['qb_url', 'qb_user', 'qb_pass'],
+  transmission:   ['transmission_url', 'transmission_user', 'transmission_pass', 'torrent_client'],
   sabnzbd:        ['sabnzbd_url', 'sabnzbd_api_key', 'sabnzbd_category'],
   audiobookshelf: ['abs_url', 'abs_token'],
   kavita:         ['kavita_url', 'kavita_user', 'kavita_pass'],
@@ -2683,6 +2724,7 @@ async function loadConfig() {
 
     if (data.prowlarr) items.push(configItem('Prowlarr', data.prowlarr.url || t('not_configured')));
     if (data.qbittorrent) items.push(configItem('qBittorrent', data.qbittorrent.url || t('not_configured')));
+    if (data.transmission) items.push(configItem('Transmission', data.transmission.url || t('not_configured')));
     if (data.sabnzbd) items.push(configItem('SABnzbd', data.sabnzbd.url || t('not_configured')));
     if (data.kavita_url) items.push(configItem('Kavita', data.kavita_url));
     if (data.audiobookshelf_url) items.push(configItem('Audiobookshelf', data.audiobookshelf_url));

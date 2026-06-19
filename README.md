@@ -44,7 +44,7 @@ Librarr searches all configured indexers in parallel, scores results by confiden
 
 ### Download Management
 
-- **4 download clients** -- qBittorrent, Transmission, Deluge, SABnzbd with priority ordering
+- **Multiple download clients** -- qBittorrent or Transmission for torrents, plus SABnzbd for Usenet
 - **Request/approval workflow** -- pending, approved, searching, downloading, completed states with per-request notifications
 - **Scheduled wishlist searches** -- background scheduler auto-searches and downloads wishlist items on a configurable interval
 - **Torrent completion watcher** -- polls download client, auto-imports completed downloads
@@ -215,8 +215,14 @@ the identity header, the next request will sign the browser back in.
 
 ### Download Clients
 
+Librarr sends torrents to **either qBittorrent or Transmission**. Configure one,
+or configure both and choose with `TORRENT_CLIENT`. The category/save-path
+settings below apply to both (Transmission uses the category as a torrent label,
+which requires Transmission 3.0+).
+
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `TORRENT_CLIENT` | | Active torrent backend when both are configured: empty (auto, qBittorrent preferred), `qbittorrent`, or `transmission` |
 | `QB_URL` | | qBittorrent Web UI URL |
 | `QB_USER` | `admin` | qBittorrent username |
 | `QB_PASS` | | qBittorrent password |
@@ -227,7 +233,10 @@ the identity header, the next request will sign the browser back in.
 | `QB_MANGA_SAVE_PATH` | `/manga-incoming` | Manga download path |
 | `QB_MANGA_CATEGORY` | `manga` | Torrent category for manga |
 | `QB_PRIORITY` | `1` | Download client priority (lower = preferred) |
-| `REMOVE_TORRENT_AFTER_IMPORT` | `true` | Remove torrent from qBittorrent after a successful import. Set to `false` to keep seeding (required for private trackers with seed-time minimums). |
+| `REMOVE_TORRENT_AFTER_IMPORT` | `true` | Remove torrent from the torrent client after a successful import. Set to `false` to keep seeding (required for private trackers with seed-time minimums). |
+| `TRANSMISSION_URL` | | Transmission RPC URL (e.g. `http://transmission:9091`) |
+| `TRANSMISSION_USER` | | Transmission RPC username (optional — only if RPC auth is enabled) |
+| `TRANSMISSION_PASS` | | Transmission RPC password (optional) |
 | `SABNZBD_URL` | | SABnzbd URL |
 | `SABNZBD_API_KEY` | | SABnzbd API key |
 | `SABNZBD_CATEGORY` | `librarr` | NZB download category |
@@ -531,6 +540,7 @@ Legacy per-source env vars (e.g. `PROWLARR_URL` and other per-driver overrides) 
 |--------|------|-------------|
 | POST | `/api/test/prowlarr` | Test Prowlarr connection |
 | POST | `/api/test/qbittorrent` | Test qBittorrent connection |
+| POST | `/api/test/transmission` | Test Transmission connection |
 | POST | `/api/test/audiobookshelf` | Test Audiobookshelf connection |
 | POST | `/api/test/kavita` | Test Kavita connection |
 | POST | `/api/test/sabnzbd` | Test SABnzbd connection |

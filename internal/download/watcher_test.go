@@ -194,7 +194,7 @@ func TestResolveLocalPathUsesGetTorrentFilesWhenContentPathEmpty(t *testing.T) {
 			QBAudiobookSavePath: "/downloads/audiobooks-incoming",
 			IncomingDir:         "/downloads/incoming",
 		},
-		qb: qb,
+		torrent: qb,
 	}
 
 	got := w.resolveLocalPath(TorrentInfo{
@@ -222,7 +222,7 @@ func TestResolveLocalPathSingleFileNoSubfolder(t *testing.T) {
 			QBAudiobookSavePath: "/downloads/audiobooks-incoming",
 			IncomingDir:         "/downloads/incoming",
 		},
-		qb: qb,
+		torrent: qb,
 	}
 
 	got := w.resolveLocalPath(TorrentInfo{
@@ -251,7 +251,7 @@ func TestResolveLocalPathMultiFileDifferentRootsFallsBack(t *testing.T) {
 			QBAudiobookSavePath: "/downloads/audiobooks-incoming",
 			IncomingDir:         "/downloads/incoming",
 		},
-		qb: qb,
+		torrent: qb,
 	}
 
 	got := w.resolveLocalPath(TorrentInfo{
@@ -286,7 +286,7 @@ func TestResolveLocalPathAPIErrorFallsBackToName(t *testing.T) {
 			QBAudiobookSavePath: "/downloads/audiobooks-incoming",
 			IncomingDir:         "/downloads/incoming",
 		},
-		qb: qb,
+		torrent: qb,
 	}
 
 	got := w.resolveLocalPath(TorrentInfo{
@@ -313,7 +313,7 @@ func TestResolveLocalPathContentPathTakesPrecedence(t *testing.T) {
 			QBAudiobookSavePath: "/downloads/audiobooks-incoming",
 			IncomingDir:         "/downloads/incoming",
 		},
-		qb: qb,
+		torrent: qb,
 	}
 
 	got := w.resolveLocalPath(TorrentInfo{

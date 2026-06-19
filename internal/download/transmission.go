@@ -5,14 +5,23 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
+	"path"
 	"sync"
 	"time"
 
 	"github.com/JeremiahM37/librarr/internal/config"
 )
 
-// TransmissionClient wraps the Transmission RPC API.
+// TransmissionClient wraps the Transmission RPC API and satisfies TorrentClient.
+//
+// Transmission has no persistent login; instead the RPC endpoint answers the
+// first request with 409 Conflict plus an X-Transmission-Session-Id header that
+// must be echoed on subsequent requests (CSRF protection). We cache that id and
+// transparently re-handshake when it expires. Librarr scopes its torrents with
+// the qBittorrent-style category mapped onto a Transmission label, so listing
+// and clearing never touch the user's other torrents.
 type TransmissionClient struct {
 	cfg       *config.Config
 	client    *http.Client
@@ -30,6 +39,9 @@ func NewTransmissionClient(cfg *config.Config) *TransmissionClient {
 	}
 }
 
+// Name identifies this client in logs and the TorrentClient interface.
+func (t *TransmissionClient) Name() string { return "transmission" }
+
 // transmissionRequest is the RPC request format.
 type transmissionRequest struct {
 	Method    string                 `json:"method"`
@@ -42,130 +54,200 @@ type transmissionResponse struct {
 	Arguments map[string]interface{} `json:"arguments,omitempty"`
 }
 
-// AddTorrent adds a torrent by URL or magnet link.
-func (t *TransmissionClient) AddTorrent(url, downloadDir string) (map[string]interface{}, error) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
+// transmissionTorrent is the typed view of a torrent-get result row.
+type transmissionTorrent struct {
+	ID           int      `json:"id"`
+	Name         string   `json:"name"`
+	Status       int      `json:"status"`
+	PercentDone  float64  `json:"percentDone"`
+	TotalSize    int64    `json:"totalSize"`
+	RateDownload int64    `json:"rateDownload"`
+	HashString   string   `json:"hashString"`
+	DownloadDir  string   `json:"downloadDir"`
+	Error        int      `json:"error"`
+	Labels       []string `json:"labels"`
+}
+
+// AddTorrent submits a torrent URL or magnet link to Transmission. The Librarr
+// category is attached as a Transmission label so the torrent can be found again
+// by GetTorrents; savePath becomes the download-dir. Both fall back to the
+// configured qBittorrent-equivalent defaults when empty, matching the
+// qBittorrent client's behaviour for drop-in parity.
+func (t *TransmissionClient) AddTorrent(torrentURL, title, savePath, category string) error {
+	if savePath == "" {
+		savePath = t.cfg.QBSavePath
+	}
+	if category == "" {
+		category = t.cfg.QBCategory
+	}
 
 	args := map[string]interface{}{
-		"filename": url,
+		"filename": torrentURL,
+		"paused":   false,
 	}
-	if downloadDir != "" {
-		args["download-dir"] = downloadDir
+	if savePath != "" {
+		args["download-dir"] = savePath
+	}
+	if category != "" {
+		args["labels"] = []string{category}
 	}
 
+	t.mu.Lock()
 	resp, err := t.call("torrent-add", args)
-	if err != nil {
-		return nil, err
-	}
-	if resp.Result != "success" {
-		return nil, fmt.Errorf("transmission: %s", resp.Result)
-	}
-
-	// The response may have "torrent-added" or "torrent-duplicate".
-	if added, ok := resp.Arguments["torrent-added"]; ok {
-		if m, ok := added.(map[string]interface{}); ok {
-			return m, nil
-		}
-	}
-	if dup, ok := resp.Arguments["torrent-duplicate"]; ok {
-		if m, ok := dup.(map[string]interface{}); ok {
-			return m, nil
-		}
-	}
-
-	return resp.Arguments, nil
-}
-
-// GetTorrent returns status info for torrents matching the given IDs.
-// If ids is nil, returns all torrents.
-func (t *TransmissionClient) GetTorrent(ids []int, fields []string) ([]map[string]interface{}, error) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	if fields == nil {
-		fields = []string{"id", "name", "status", "percentDone", "totalSize", "rateDownload", "hashString"}
-	}
-
-	args := map[string]interface{}{
-		"fields": fields,
-	}
-	if ids != nil {
-		args["ids"] = ids
-	}
-
-	resp, err := t.call("torrent-get", args)
-	if err != nil {
-		return nil, err
-	}
-	if resp.Result != "success" {
-		return nil, fmt.Errorf("transmission: %s", resp.Result)
-	}
-
-	torrentsRaw, ok := resp.Arguments["torrents"]
-	if !ok {
-		return nil, nil
-	}
-
-	// Convert to []map[string]interface{}.
-	torrentsJSON, err := json.Marshal(torrentsRaw)
-	if err != nil {
-		return nil, err
-	}
-	var torrents []map[string]interface{}
-	if err := json.Unmarshal(torrentsJSON, &torrents); err != nil {
-		return nil, err
-	}
-	return torrents, nil
-}
-
-// RemoveTorrent removes torrents by ID.
-func (t *TransmissionClient) RemoveTorrent(ids []int, deleteData bool) error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	resp, err := t.call("torrent-remove", map[string]interface{}{
-		"ids":               ids,
-		"delete-local-data": deleteData,
-	})
+	t.mu.Unlock()
 	if err != nil {
 		return err
 	}
 	if resp.Result != "success" {
-		return fmt.Errorf("transmission: %s", resp.Result)
+		return fmt.Errorf("transmission add torrent: %s", resp.Result)
+	}
+
+	// A "torrent-duplicate" result is not an error — the torrent is already
+	// present, which is the desired end state.
+	slog.Info("torrent added to Transmission", "title", title, "category", category)
+	return nil
+}
+
+// GetTorrents returns Librarr-scoped torrents, optionally filtered to a single
+// category (label). State is reported using the qBittorrent vocabulary so
+// callers can keep using MapTorrentStatus.
+func (t *TransmissionClient) GetTorrents(category string) ([]TorrentInfo, error) {
+	fields := []string{
+		"id", "name", "status", "percentDone", "totalSize",
+		"rateDownload", "hashString", "downloadDir", "error", "labels",
+	}
+
+	t.mu.Lock()
+	resp, err := t.call("torrent-get", map[string]interface{}{"fields": fields})
+	t.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	if resp.Result != "success" {
+		return nil, fmt.Errorf("transmission get torrents: %s", resp.Result)
+	}
+
+	raw, ok := resp.Arguments["torrents"]
+	if !ok {
+		return nil, nil
+	}
+	rawJSON, err := json.Marshal(raw)
+	if err != nil {
+		return nil, err
+	}
+	var rows []transmissionTorrent
+	if err := json.Unmarshal(rawJSON, &rows); err != nil {
+		return nil, err
+	}
+
+	var out []TorrentInfo
+	for _, r := range rows {
+		// Only surface torrents Librarr added (those carrying our label).
+		if !hasLabel(r.Labels, category) {
+			continue
+		}
+		out = append(out, TorrentInfo{
+			Name:        r.Name,
+			Hash:        r.HashString,
+			State:       mapTransmissionState(r.Status, r.PercentDone, r.Error),
+			Progress:    r.PercentDone,
+			TotalSize:   r.TotalSize,
+			DlSpeed:     r.RateDownload,
+			Category:    firstLabel(r.Labels),
+			SavePath:    r.DownloadDir,
+			ContentPath: path.Join(r.DownloadDir, r.Name),
+		})
+	}
+	return out, nil
+}
+
+// GetTorrentFiles lists the files inside a torrent identified by hash.
+func (t *TransmissionClient) GetTorrentFiles(hash string) ([]TorrentFile, error) {
+	t.mu.Lock()
+	resp, err := t.call("torrent-get", map[string]interface{}{
+		"ids":    []string{hash},
+		"fields": []string{"files"},
+	})
+	t.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	if resp.Result != "success" {
+		return nil, fmt.Errorf("transmission get files: %s", resp.Result)
+	}
+
+	raw, ok := resp.Arguments["torrents"]
+	if !ok {
+		return nil, nil
+	}
+	rawJSON, err := json.Marshal(raw)
+	if err != nil {
+		return nil, err
+	}
+	var rows []struct {
+		Files []struct {
+			Name string `json:"name"`
+		} `json:"files"`
+	}
+	if err := json.Unmarshal(rawJSON, &rows); err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
+
+	var files []TorrentFile
+	for _, f := range rows[0].Files {
+		files = append(files, TorrentFile{Name: f.Name})
+	}
+	return files, nil
+}
+
+// DeleteTorrent removes a torrent by hash. Transmission accepts SHA-1 hash
+// strings directly in the "ids" array.
+func (t *TransmissionClient) DeleteTorrent(hash string, deleteFiles bool) error {
+	t.mu.Lock()
+	resp, err := t.call("torrent-remove", map[string]interface{}{
+		"ids":               []string{hash},
+		"delete-local-data": deleteFiles,
+	})
+	t.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	if resp.Result != "success" {
+		return fmt.Errorf("transmission remove torrent: %s", resp.Result)
 	}
 	return nil
 }
 
-// Diagnose tests the Transmission connection.
+// Diagnose tests the Transmission connection for the settings "Test" button.
 func (t *TransmissionClient) Diagnose() map[string]interface{} {
-	t.mu.Lock()
-	defer t.mu.Unlock()
+	if !t.cfg.HasTransmission() {
+		return map[string]interface{}{"success": false, "error": "Transmission not configured"}
+	}
 
+	t.mu.Lock()
 	resp, err := t.call("session-get", nil)
+	t.mu.Unlock()
 	if err != nil {
-		return map[string]interface{}{
-			"success": false,
-			"error":   err.Error(),
-		}
+		return map[string]interface{}{"success": false, "error": err.Error()}
 	}
 	if resp.Result != "success" {
-		return map[string]interface{}{
-			"success": false,
-			"error":   resp.Result,
-		}
+		return map[string]interface{}{"success": false, "error": resp.Result}
 	}
-	return map[string]interface{}{
-		"success": true,
+
+	result := map[string]interface{}{"success": true}
+	if v, ok := resp.Arguments["version"].(string); ok {
+		result["version"] = v
 	}
+	return result
 }
 
+// call performs an RPC call, transparently handling the 409 session-id
+// handshake. Callers must hold t.mu.
 func (t *TransmissionClient) call(method string, args map[string]interface{}) (*transmissionResponse, error) {
-	reqBody := transmissionRequest{
-		Method:    method,
-		Arguments: args,
-	}
-
+	reqBody := transmissionRequest{Method: method, Arguments: args}
 	body, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, err
@@ -177,7 +259,8 @@ func (t *TransmissionClient) call(method string, args map[string]interface{}) (*
 		return nil, err
 	}
 
-	// Handle 409 Conflict — Transmission requires a session-id header.
+	// Handle 409 Conflict — Transmission requires a session-id header that it
+	// hands back on the first request. Cache it and replay once.
 	if resp.StatusCode == http.StatusConflict {
 		t.sessionID = resp.Header.Get("X-Transmission-Session-Id")
 		resp.Body.Close()
@@ -194,6 +277,9 @@ func (t *TransmissionClient) call(method string, args map[string]interface{}) (*
 	if resp.StatusCode == http.StatusUnauthorized {
 		return nil, fmt.Errorf("transmission: authentication failed")
 	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("transmission: HTTP %d", resp.StatusCode)
+	}
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -204,7 +290,6 @@ func (t *TransmissionClient) call(method string, args map[string]interface{}) (*
 	if err := json.Unmarshal(respBody, &trResp); err != nil {
 		return nil, fmt.Errorf("transmission: invalid JSON response")
 	}
-
 	return &trResp, nil
 }
 
@@ -221,4 +306,55 @@ func (t *TransmissionClient) doRequest(url string, body []byte) (*http.Response,
 		req.SetBasicAuth(t.cfg.TransmissionUser, t.cfg.TransmissionPass)
 	}
 	return t.client.Do(req)
+}
+
+// mapTransmissionState converts a Transmission status code into the qBittorrent
+// state vocabulary so MapTorrentStatus works uniformly across backends.
+//
+// Transmission status codes: 0 stopped, 1 check-wait, 2 checking,
+// 3 download-wait, 4 downloading, 5 seed-wait, 6 seeding.
+func mapTransmissionState(status int, percentDone float64, errCode int) string {
+	if errCode != 0 {
+		return "error"
+	}
+	switch status {
+	case 0: // stopped — distinguish finished vs paused-incomplete
+		if percentDone >= 1 {
+			return "pausedUP"
+		}
+		return "pausedDL"
+	case 1, 2: // verifying
+		return "checkingDL"
+	case 3: // queued to download
+		return "queuedDL"
+	case 4: // downloading
+		return "downloading"
+	case 5: // queued to seed
+		return "queuedUP"
+	case 6: // seeding (treated as completed, like qBittorrent "uploading")
+		return "uploading"
+	default:
+		return "downloading"
+	}
+}
+
+// hasLabel reports whether labels contains want. An empty want matches any
+// torrent (used for "list everything Librarr could see").
+func hasLabel(labels []string, want string) bool {
+	if want == "" {
+		return true
+	}
+	for _, l := range labels {
+		if l == want {
+			return true
+		}
+	}
+	return false
+}
+
+func firstLabel(labels []string) string {
+	if len(labels) > 0 {
+		return labels[0]
+	}
+	return ""
 }

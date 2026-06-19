@@ -20,7 +20,7 @@ import (
 type Manager struct {
 	cfg           *config.Config
 	db            *db.DB
-	qb            *QBittorrentClient
+	torrent       TorrentClient
 	sab           *SABnzbdClient
 	direct        *DirectDownloader
 	organizer     *organize.Organizer
@@ -38,11 +38,11 @@ func (m *Manager) SetWebhookSender(ws *webhook.Sender) {
 }
 
 // NewManager creates a download manager.
-func NewManager(cfg *config.Config, database *db.DB, qb *QBittorrentClient, sab *SABnzbdClient, direct *DirectDownloader, organizer *organize.Organizer, targets *organize.LibraryTargets, health *search.HealthTracker) *Manager {
+func NewManager(cfg *config.Config, database *db.DB, torrent TorrentClient, sab *SABnzbdClient, direct *DirectDownloader, organizer *organize.Organizer, targets *organize.LibraryTargets, health *search.HealthTracker) *Manager {
 	m := &Manager{
 		cfg:       cfg,
 		db:        database,
-		qb:        qb,
+		torrent:   torrent,
 		sab:       sab,
 		direct:    direct,
 		organizer: organizer,
@@ -92,9 +92,12 @@ func (m *Manager) StartAnnasDownload(md5, title string) (*models.DownloadJob, er
 	return job, nil
 }
 
-// StartTorrentDownload adds a torrent to qBittorrent.
+// StartTorrentDownload adds a torrent to the active torrent client.
 func (m *Manager) StartTorrentDownload(torrentURL, title, savePath, category string) error {
-	return m.qb.AddTorrent(torrentURL, title, savePath, category)
+	if m.torrent == nil {
+		return fmt.Errorf("no torrent download client configured")
+	}
+	return m.torrent.AddTorrent(torrentURL, title, savePath, category)
 }
 
 // StartNZBDownload sends an NZB URL to SABnzbd.
@@ -408,8 +411,8 @@ func (m *Manager) runDirectDownload(job *models.DownloadJob, fileURL, sourceID, 
 func (m *Manager) GetDownloads() []models.DownloadStatus {
 	var downloads []models.DownloadStatus
 
-	// qBittorrent torrents.
-	if m.cfg.HasQBittorrent() {
+	// Active torrent client (qBittorrent or Transmission).
+	if m.torrent != nil {
 		for _, cat := range []struct {
 			name  string
 			label string
@@ -418,7 +421,7 @@ func (m *Manager) GetDownloads() []models.DownloadStatus {
 			{m.cfg.QBAudiobookCategory, "audiobook"},
 			{m.cfg.QBMangaCategory, "manga"},
 		} {
-			torrents, err := m.qb.GetTorrents(cat.name)
+			torrents, err := m.torrent.GetTorrents(cat.name)
 			if err != nil {
 				continue
 			}
@@ -487,9 +490,12 @@ func mapSABStatus(status string) string {
 	}
 }
 
-// DeleteTorrent removes a torrent from qBittorrent.
+// DeleteTorrent removes a torrent from the active torrent client.
 func (m *Manager) DeleteTorrent(hash string) error {
-	return m.qb.DeleteTorrent(hash, true)
+	if m.torrent == nil {
+		return fmt.Errorf("no torrent download client configured")
+	}
+	return m.torrent.DeleteTorrent(hash, true)
 }
 
 // DeleteJob removes a background download job.
@@ -517,18 +523,18 @@ func (m *Manager) ClearFinished() (int, int, error) {
 		return jobsCleared, 0, err
 	}
 
-	// Clear completed qBittorrent torrents.
+	// Clear completed torrents from the active torrent client.
 	torrentsCleared := 0
-	if m.cfg.HasQBittorrent() {
+	if m.torrent != nil {
 		for _, cat := range []string{m.cfg.QBCategory, m.cfg.QBAudiobookCategory, m.cfg.QBMangaCategory} {
-			torrents, err := m.qb.GetTorrents(cat)
+			torrents, err := m.torrent.GetTorrents(cat)
 			if err != nil {
 				continue
 			}
 			for _, t := range torrents {
 				status := MapTorrentStatus(t.State)
 				if status == "completed" || t.State == "error" || t.State == "missingFiles" {
-					if err := m.qb.DeleteTorrent(t.Hash, false); err == nil {
+					if err := m.torrent.DeleteTorrent(t.Hash, false); err == nil {
 						torrentsCleared++
 					}
 				}

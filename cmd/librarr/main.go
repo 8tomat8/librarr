@@ -82,14 +82,22 @@ func main() {
 
 	// Initialize download components.
 	qb := download.NewQBittorrentClient(cfg)
+	transmission := download.NewTransmissionClient(cfg)
 	sab := download.NewSABnzbdClient(cfg)
+	torrentClient := download.SelectTorrentClient(cfg, qb, transmission)
+	if torrentClient != nil {
+		slog.Info("active torrent client", "client", torrentClient.Name())
+	} else {
+		slog.Info("no torrent client configured")
+	}
 	directDL := download.NewDirectDownloader(cfg, &http.Client{Timeout: 5 * time.Minute})
 	organizer := organize.NewOrganizer(cfg)
 	targets := organize.NewLibraryTargets(cfg)
-	downloadMgr := download.NewManager(cfg, database, qb, sab, directDL, organizer, targets, health)
+	downloadMgr := download.NewManager(cfg, database, torrentClient, sab, directDL, organizer, targets, health)
 
-	// Try to connect to qBittorrent on startup.
-	if cfg.HasQBittorrent() {
+	// Try to connect to qBittorrent on startup (Transmission has no persistent
+	// login — it handshakes a session id lazily on first request).
+	if cfg.ActiveTorrentClient() == "qbittorrent" {
 		if err := qb.Login(); err != nil {
 			slog.Warn("qBittorrent initial login failed (will retry on demand)", "error", err)
 		}
@@ -100,7 +108,7 @@ func main() {
 	defer stop()
 
 	// Start torrent completion watcher.
-	watcher := download.NewWatcher(cfg, database, qb, organizer, targets, health)
+	watcher := download.NewWatcher(cfg, database, torrentClient, organizer, targets, health)
 	go watcher.Start(ctx)
 
 	// Start audiobook folder scanner (Feature 21).
@@ -108,7 +116,7 @@ func main() {
 	go scanner.Start(ctx)
 
 	// Create HTTP server (also initializes webhook sender, scheduler, series detector).
-	server := api.NewServer(cfg, database, searchMgr, downloadMgr, qb, sab, organizer, targets)
+	server := api.NewServer(cfg, database, searchMgr, downloadMgr, qb, transmission, sab, organizer, targets)
 
 	// Start scheduled search goroutine.
 	go server.StartScheduler(ctx)

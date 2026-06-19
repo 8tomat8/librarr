@@ -18,11 +18,12 @@ import (
 	"github.com/JeremiahM37/librarr/internal/search"
 )
 
-// Watcher monitors qBittorrent for completed torrents and runs the import pipeline.
+// Watcher monitors the active torrent client for completed torrents and runs
+// the import pipeline.
 type Watcher struct {
 	cfg       *config.Config
 	db        *db.DB
-	qb        *QBittorrentClient
+	torrent   TorrentClient
 	organizer *organize.Organizer
 	targets   *organize.LibraryTargets
 	health    *search.HealthTracker
@@ -32,11 +33,11 @@ type Watcher struct {
 }
 
 // NewWatcher creates a new torrent completion watcher.
-func NewWatcher(cfg *config.Config, database *db.DB, qb *QBittorrentClient, organizer *organize.Organizer, targets *organize.LibraryTargets, health *search.HealthTracker) *Watcher {
+func NewWatcher(cfg *config.Config, database *db.DB, torrent TorrentClient, organizer *organize.Organizer, targets *organize.LibraryTargets, health *search.HealthTracker) *Watcher {
 	return &Watcher{
 		cfg:       cfg,
 		db:        database,
-		qb:        qb,
+		torrent:   torrent,
 		organizer: organizer,
 		targets:   targets,
 		health:    health,
@@ -45,12 +46,12 @@ func NewWatcher(cfg *config.Config, database *db.DB, qb *QBittorrentClient, orga
 
 // Start begins the background watcher loop. It blocks until ctx is cancelled.
 func (w *Watcher) Start(ctx context.Context) {
-	if !w.cfg.HasQBittorrent() {
-		slog.Info("torrent watcher disabled (qBittorrent not configured)")
+	if w.torrent == nil {
+		slog.Info("torrent watcher disabled (no torrent client configured)")
 		return
 	}
 
-	slog.Info("torrent completion watcher started", "interval", "30s")
+	slog.Info("torrent completion watcher started", "client", w.torrent.Name(), "interval", "30s")
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
@@ -79,7 +80,7 @@ func (w *Watcher) checkCompleted() {
 	}
 
 	for _, cat := range categories {
-		torrents, err := w.qb.GetTorrents(cat.name)
+		torrents, err := w.torrent.GetTorrents(cat.name)
 		if err != nil {
 			continue
 		}
@@ -127,7 +128,7 @@ func (w *Watcher) importTorrent(t TorrentInfo, mediaType string) {
 	// Optionally remove torrent from qBit after import. Default is to remove;
 	// set REMOVE_TORRENT_AFTER_IMPORT=false to keep seeding (e.g. private trackers).
 	if w.cfg.RemoveTorrentAfterImport {
-		if err := w.qb.DeleteTorrent(t.Hash, false); err != nil {
+		if err := w.torrent.DeleteTorrent(t.Hash, false); err != nil {
 			slog.Warn("failed to remove torrent after import", "hash", t.Hash, "error", err)
 		} else {
 			slog.Info("removed completed torrent", "name", t.Name)
@@ -159,8 +160,8 @@ func (w *Watcher) resolveLocalPath(t TorrentInfo, mediaType string) string {
 	// Fetch files from qBittorrent to find the actual root folder/file.
 	var files []TorrentFile
 	var err error
-	if w.qb != nil {
-		files, err = w.qb.GetTorrentFiles(t.Hash)
+	if w.torrent != nil {
+		files, err = w.torrent.GetTorrentFiles(t.Hash)
 	}
 	if err == nil && len(files) > 0 {
 		var firstPart string
