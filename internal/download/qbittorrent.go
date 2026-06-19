@@ -28,6 +28,9 @@ type QBittorrentClient struct {
 	lastError     string
 }
 
+// Name identifies this client in logs and the TorrentClient interface.
+func (q *QBittorrentClient) Name() string { return "qbittorrent" }
+
 // NewQBittorrentClient creates a new qBittorrent API client.
 func NewQBittorrentClient(cfg *config.Config) *QBittorrentClient {
 	return &QBittorrentClient{

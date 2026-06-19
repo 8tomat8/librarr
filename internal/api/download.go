@@ -70,10 +70,10 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleTorrentDownload(w http.ResponseWriter, r *http.Request, req models.DownloadRequest) {
-	if !s.cfg.HasQBittorrent() {
+	if !s.cfg.HasTorrentClient() {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
 			"success": false,
-			"error":   "qBittorrent not configured",
+			"error":   "No torrent download client configured",
 		})
 		return
 	}

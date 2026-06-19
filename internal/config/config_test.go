@@ -419,3 +419,33 @@ func TestRemoveTorrentAfterImportDisabled(t *testing.T) {
 		t.Error("RemoveTorrentAfterImport should be false when explicitly disabled")
 	}
 }
+
+func TestActiveTorrentClient(t *testing.T) {
+	cases := []struct {
+		name string
+		cfg  Config
+		want string
+	}{
+		{"none", Config{}, ""},
+		{"qb only", Config{QBUrl: "http://qb"}, "qbittorrent"},
+		{"transmission only", Config{TransmissionURL: "http://tr"}, "transmission"},
+		{"both default prefers qb", Config{QBUrl: "http://qb", TransmissionURL: "http://tr"}, "qbittorrent"},
+		{"explicit transmission", Config{QBUrl: "http://qb", TransmissionURL: "http://tr", TorrentClient: "transmission"}, "transmission"},
+		{"explicit qb alias", Config{QBUrl: "http://qb", TransmissionURL: "http://tr", TorrentClient: "qbit"}, "qbittorrent"},
+		{"explicit transmission but unconfigured falls back", Config{QBUrl: "http://qb", TorrentClient: "transmission"}, "qbittorrent"},
+	}
+	for _, c := range cases {
+		if got := c.cfg.ActiveTorrentClient(); got != c.want {
+			t.Errorf("%s: ActiveTorrentClient() = %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+func TestHasTorrentClient(t *testing.T) {
+	if (&Config{}).HasTorrentClient() {
+		t.Error("empty config should have no torrent client")
+	}
+	if !(&Config{TransmissionURL: "http://tr"}).HasTorrentClient() {
+		t.Error("transmission-only config should report a torrent client")
+	}
+}
