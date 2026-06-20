@@ -260,7 +260,10 @@ func TestMapTransmissionState(t *testing.T) {
 		{4, 0.3, 0, "downloading"},
 		{5, 1.0, 0, "queuedUP"},
 		{6, 1.0, 0, "uploading"},
-		{4, 0.3, 3, "error"}, // error code overrides status
+		{4, 0.3, 3, "error"},       // local error (code 3) is fatal
+		{4, 0.3, 1, "downloading"}, // tracker warning is non-fatal — keep downloading
+		{4, 0.3, 2, "downloading"}, // tracker error is non-fatal — keep downloading
+		{6, 1.0, 2, "uploading"},   // seeding with a dead tracker is still seeding/complete
 	}
 	for _, c := range cases {
 		if got := mapTransmissionState(c.status, c.percentDone, c.errCode); got != c.want {
