@@ -313,8 +313,16 @@ func (t *TransmissionClient) doRequest(url string, body []byte) (*http.Response,
 //
 // Transmission status codes: 0 stopped, 1 check-wait, 2 checking,
 // 3 download-wait, 4 downloading, 5 seed-wait, 6 seeding.
+//
+// Transmission error codes: 0 ok, 1 tracker warning, 2 tracker error,
+// 3 local error. Only a local error (3 — disk full, permissions, missing
+// data) is fatal. Tracker warning/error are NOT: the torrent keeps working
+// via DHT/PEX/webseeds and routinely shows code 1/2 on public torrents with a
+// flaky tracker. Treating those as "error" would both mislabel healthy
+// torrents and let ClearFinished remove a still-downloading torrent, so we
+// fall through to the status-based mapping for codes 1 and 2.
 func mapTransmissionState(status int, percentDone float64, errCode int) string {
-	if errCode != 0 {
+	if errCode == 3 {
 		return "error"
 	}
 	switch status {
