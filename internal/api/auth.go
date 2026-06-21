@@ -236,9 +236,14 @@ func authMiddleware(cfg *config.Config, database *db.DB, sessions *SessionStore,
 			}
 		}
 
-		// If no multi-user and no legacy auth, pass through.
+		// No multi-user, no legacy auth, no API key: the instance is open.
+		// Treat the local caller as an admin rather than passing through
+		// role-less, so admin-gated routes (e.g. POST /api/settings) work on
+		// userless instances instead of failing requireAdmin with a 403.
 		if !multiUser && !cfg.HasAuth() && !cfg.HasAPIKey() {
-			next.ServeHTTP(w, r)
+			ctx := context.WithValue(r.Context(), ctxUserRole, "admin")
+			ctx = context.WithValue(ctx, ctxUsername, "local")
+			next.ServeHTTP(w, r.WithContext(ctx))
 			return
 		}
 
