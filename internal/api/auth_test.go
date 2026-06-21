@@ -575,3 +575,41 @@ func TestHandleAuthStatus_ProxyHeaderDoesNotCreateUser(t *testing.T) {
 		t.Fatalf("user count = %d, want 0", count)
 	}
 }
+
+// TestAuthMiddleware_OpenInstanceGrantsAdmin is a regression test for issue
+// #76: on a userless instance with no auth and no API key configured, the
+// open-access pass-through must mark the caller as admin so admin-gated routes
+// (POST /api/settings, etc.) work instead of failing requireAdmin with a 403.
+func TestAuthMiddleware_OpenInstanceGrantsAdmin(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.New(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("create test db: %v", err)
+	}
+	t.Cleanup(func() { database.Close() })
+
+	// Empty config => no legacy auth, no API key. No users in the DB => not
+	// multi-user. This is a fresh, open instance.
+	called := false
+	var gotRole string
+	final := func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		gotRole, _ = r.Context().Value(ctxUserRole).(string)
+		w.WriteHeader(http.StatusNoContent)
+	}
+	handler := authMiddleware(&config.Config{}, database, NewSessionStore(), requireAdmin(final))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/settings", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204; body=%s", rr.Code, rr.Body.String())
+	}
+	if !called {
+		t.Fatal("admin-gated handler was not reached on an open instance")
+	}
+	if gotRole != "admin" {
+		t.Fatalf("role = %q, want admin on an open instance", gotRole)
+	}
+}
