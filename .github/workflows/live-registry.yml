@@ -1,0 +1,20 @@
+name: Live Registry Canary
+# Validates the live librarr-sources companion registry the production binary
+# fetches at runtime. Runs on a schedule (and on demand) only — never on push
+# or PR — so a GitHub/raw outage can't block normal CI or releases. A failure
+# means the registry is unreachable, returning bad data, or its schema drifted.
+on:
+  schedule:
+    - cron: '17 6 * * 1' # weekly, Monday 06:17 UTC
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: {go-version: '1.25.x', cache: false, check-latest: true}
+      - name: live registry test
+        run: go test -tags live ./internal/sources/ -run TestLive -v -count=1
