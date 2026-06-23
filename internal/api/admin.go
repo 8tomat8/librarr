@@ -81,15 +81,12 @@ func (s *Server) handleAdminDashboard(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) handleAdminActivity(w http.ResponseWriter, r *http.Request) {
 	user := r.URL.Query().Get("user")
 	action := r.URL.Query().Get("action")
-	limit := queryInt(r, "limit", 50)
-	offset := queryInt(r, "offset", 0)
+	limit := queryBoundedInt(r, "limit", 50, 1, 500)
+	offset := queryBoundedInt(r, "offset", 0, 0, 1_000_000)
 
 	entries, err := s.db.GetActivityLog(user, action, limit, offset)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
-			"success": false,
-			"error":   err.Error(),
-		})
+		writeError(w, http.StatusInternalServerError, "Failed to load activity log", err)
 		return
 	}
 

@@ -131,7 +131,7 @@ func (h *OIDCHandler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	oauth2Cfg := h.oauth2
 	if oauth2Cfg.RedirectURL == "" {
 		scheme := "http"
-		if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+		if isSecureRequest(r) {
 			scheme = "https"
 		}
 		host := r.Host
@@ -177,7 +177,7 @@ func (h *OIDCHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	oauth2Cfg := h.oauth2
 	if oauth2Cfg.RedirectURL == "" {
 		scheme := "http"
-		if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+		if isSecureRequest(r) {
 			scheme = "https"
 		}
 		oauth2Cfg.RedirectURL = fmt.Sprintf("%s://%s/auth/oidc/callback", scheme, r.Host)
@@ -241,6 +241,12 @@ func (h *OIDCHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.cfg.OIDCRequireEmailVerified && claims.Email != "" && !claims.EmailVerified {
+		slog.Warn("OIDC login rejected: email not verified", "email", claims.Email)
+		http.Error(w, "Email address is not verified", http.StatusForbidden)
+		return
+	}
+
 	slog.Info("OIDC login", "username", username, "email", claims.Email, "sub", claims.Sub)
 
 	// Find or create user.
@@ -258,7 +264,6 @@ func (h *OIDCHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	// Create session.
 	h.db.UpdateLastLogin(user.ID)
 	sessionToken := h.sessions.Create(user.ID, user.Username, user.Role)
-
 	setSessionCookie(w, r, sessionToken, 86400)
 
 	// Redirect to app root.

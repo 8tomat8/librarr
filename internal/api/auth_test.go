@@ -184,8 +184,13 @@ func TestHashBackupCode(t *testing.T) {
 }
 
 func TestSetSessionCookieSecureFlag(t *testing.T) {
+	// httptest.NewRequest sets RemoteAddr to 192.0.2.1:1234, so a trusted-proxy
+	// entry of 192.0.2.1/32 marks the request's peer as a trusted proxy.
+	t.Cleanup(func() { setTrustedProxies(nil) })
+
 	tests := []struct {
 		name       string
+		trusted    []string
 		configure  func(*http.Request)
 		wantSecure bool
 	}{
@@ -200,23 +205,33 @@ func TestSetSessionCookieSecureFlag(t *testing.T) {
 			wantSecure: true,
 		},
 		{
-			name: "reverse proxy HTTPS request",
+			name:    "X-Forwarded-Proto from trusted proxy",
+			trusted: []string{"192.0.2.1/32"},
 			configure: func(r *http.Request) {
 				r.Header.Set("X-Forwarded-Proto", "https")
 			},
 			wantSecure: true,
 		},
 		{
-			name: "standard forwarded HTTPS request",
+			name:    "standard Forwarded header from trusted proxy",
+			trusted: []string{"192.0.2.1/32"},
 			configure: func(r *http.Request) {
 				r.Header.Set("Forwarded", "for=192.0.2.60;proto=https;host=books.example.com")
 			},
 			wantSecure: true,
 		},
+		{
+			name: "forwarded HTTPS from untrusted peer is ignored",
+			configure: func(r *http.Request) {
+				r.Header.Set("X-Forwarded-Proto", "https")
+			},
+			wantSecure: false,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			setTrustedProxies(tt.trusted)
 			req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
 			if tt.configure != nil {
 				tt.configure(req)

@@ -14,6 +14,7 @@ import (
 	"github.com/JeremiahM37/librarr/internal/config"
 	"github.com/JeremiahM37/librarr/internal/db"
 	"github.com/JeremiahM37/librarr/internal/download"
+	"github.com/JeremiahM37/librarr/internal/netutil"
 	"github.com/JeremiahM37/librarr/internal/organize"
 	"github.com/JeremiahM37/librarr/internal/search"
 	"github.com/JeremiahM37/librarr/internal/version"
@@ -72,6 +73,10 @@ func main() {
 
 	searchMgr := search.NewManager(cfg, sources, health)
 
+	// Graceful shutdown context (used by background workers).
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	// Log enabled sources.
 	for _, s := range sources {
 		status := "disabled"
@@ -91,7 +96,17 @@ func main() {
 	} else {
 		slog.Info("no torrent client configured")
 	}
-	directDL := download.NewDirectDownloader(cfg, &http.Client{Timeout: 5 * time.Minute})
+	directDL := download.NewDirectDownloader(cfg, &http.Client{
+		Timeout: 5 * time.Minute,
+		// Re-run the SSRF guard on every redirect hop: a public URL can 30x to
+		// an internal address, which the initial check would never see.
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 10 {
+				return fmt.Errorf("stopped after 10 redirects")
+			}
+			return netutil.ValidateOutboundURL(req.URL.String())
+		},
+	})
 	organizer := organize.NewOrganizer(cfg)
 	targets := organize.NewLibraryTargets(cfg)
 	downloadMgr := download.NewManager(cfg, database, torrentClient, sab, directDL, organizer, targets, health)
@@ -103,10 +118,6 @@ func main() {
 			slog.Warn("qBittorrent initial login failed (will retry on demand)", "error", err)
 		}
 	}
-
-	// Graceful shutdown context.
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	// Start torrent completion watcher.
 	watcher := download.NewWatcher(cfg, database, torrentClient, organizer, targets, health)

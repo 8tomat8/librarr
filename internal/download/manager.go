@@ -110,6 +110,14 @@ func (m *Manager) StartNZBDownload(nzbURL, title string) (string, error) {
 
 // StartDirectDownload starts a background download from a direct URL.
 func (m *Manager) StartDirectDownload(fileURL, title, source, sourceID, author string) (*models.DownloadJob, error) {
+	// Validate at the single entry point shared by every caller (API download
+	// handler, request fulfillment, CSV import) so none can bypass the SSRF
+	// guard. Redirect hops and HTML-scraped follow-up URLs are re-validated
+	// downstream in the direct downloader.
+	if err := m.direct.checkURL(fileURL); err != nil {
+		return nil, err
+	}
+
 	job := m.createJob(title, source, fileURL)
 	job.MediaType = "ebook"
 	job.SourceID = sourceID
@@ -157,6 +165,9 @@ var validTransitions = map[string]map[string]bool{
 }
 
 func (m *Manager) updateJob(job *models.DownloadJob, status, detail, errMsg string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	// Validate transition.
 	if allowed, ok := validTransitions[job.Status]; ok {
 		if !allowed[status] && status != job.Status {
@@ -186,6 +197,17 @@ func (m *Manager) updateJob(job *models.DownloadJob, status, detail, errMsg stri
 	job.Error = errMsg
 	job.UpdatedAt = time.Now()
 	_ = m.db.UpdateJobStatus(job.ID, status, detail, errMsg)
+}
+
+// setJobProgress updates a job's progress detail under the manager lock. The
+// download progress callbacks run on the worker goroutine while other readers
+// (status pollers, API handlers) may inspect the same job, so these writes must
+// be synchronized like the rest of the job mutations.
+func (m *Manager) setJobProgress(job *models.DownloadJob, detail string) {
+	m.mu.Lock()
+	job.Detail = detail
+	job.UpdatedAt = time.Now()
+	m.mu.Unlock()
 }
 
 // RetryDeadLetterJob manually retries a dead letter job.
@@ -227,8 +249,7 @@ func (m *Manager) runAnnasDownload(job *models.DownloadJob) {
 	m.updateJob(job, "downloading", "Downloading from Anna's Archive...", "")
 
 	filePath, fileSize, err := m.direct.DownloadFromAnnas(job.MD5, job.Title, func(detail string) {
-		job.Detail = detail
-		job.UpdatedAt = time.Now()
+		m.setJobProgress(job, detail)
 	})
 	if err != nil {
 		slog.Error("anna's archive download failed", "title", job.Title, "error", err)
@@ -349,8 +370,7 @@ func (m *Manager) runDirectDownload(job *models.DownloadJob, fileURL, sourceID, 
 	}
 
 	filePath, fileSize, err := download(fileURL, job.Title, func(detail string) {
-		job.Detail = detail
-		job.UpdatedAt = time.Now()
+		m.setJobProgress(job, detail)
 	})
 	if err != nil {
 		slog.Error("direct download failed", "title", job.Title, "error", err)

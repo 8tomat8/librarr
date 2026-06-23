@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/JeremiahM37/librarr/internal/netutil"
 	"github.com/JeremiahM37/librarr/internal/webhook"
 )
 
@@ -39,6 +40,12 @@ func (s *Server) handleCreateWebhook(w http.ResponseWriter, r *http.Request) {
 	if cfg.URL == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
 			"success": false, "error": "URL is required",
+		})
+		return
+	}
+	if err := netutil.ValidateOutboundURL(cfg.URL); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"success": false, "error": err.Error(),
 		})
 		return
 	}
@@ -110,9 +117,16 @@ func (s *Server) handleTestWebhook(w http.ResponseWriter, r *http.Request) {
 		req.Type = "generic"
 	}
 
+	if err := netutil.ValidateOutboundURL(req.URL); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"success": false, "error": err.Error(),
+		})
+		return
+	}
+
 	if err := s.webhookSender.Test(req.URL, req.Type); err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]interface{}{
-			"success": false, "error": err.Error(),
+			"success": false, "error": "Webhook delivery failed",
 		})
 		return
 	}

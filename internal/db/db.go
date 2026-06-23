@@ -647,6 +647,8 @@ func (d *DB) HasSourceID(sourceID string) bool {
 	if sourceID == "" {
 		return false
 	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
 	var exists int
 	err := d.db.QueryRow("SELECT 1 FROM library_items WHERE source_id = ?", sourceID).Scan(&exists)
 	return err == nil

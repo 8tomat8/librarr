@@ -17,6 +17,10 @@ type Config struct {
 	Port   int
 	DBPath string
 
+	// TrustedProxies lists CIDRs/IPs of reverse proxies whose forwarded
+	// headers (X-Forwarded-Proto) may be trusted. Empty = trust none.
+	TrustedProxies []string
+
 	// qBittorrent
 	QBUrl               string
 	QBUser              string
@@ -141,15 +145,16 @@ type Config struct {
 	SettingsFile string
 
 	// OIDC / SSO
-	OIDCEnabled         bool
-	OIDCProviderName    string
-	OIDCIssuer          string
-	OIDCClientID        string
-	OIDCClientSecret    string
-	OIDCRedirectURI     string
-	OIDCAutoCreateUsers bool
-	OIDCDefaultRole     string
-	OIDCProxyHeaders    bool
+	OIDCEnabled              bool
+	OIDCProviderName         string
+	OIDCIssuer               string
+	OIDCClientID             string
+	OIDCClientSecret         string
+	OIDCRedirectURI          string
+	OIDCAutoCreateUsers      bool
+	OIDCDefaultRole          string
+	OIDCRequireEmailVerified bool
+	OIDCProxyHeaders         bool
 
 	// Deluge
 	DelugeURL      string
@@ -270,9 +275,10 @@ func buildFromEnv() *Config {
 	}
 
 	return &Config{
-		Sources: registry,
-		Port:    getEnvInt("LIBRARR_PORT", 5050),
-		DBPath:  dbPath,
+		Sources:        registry,
+		Port:           getEnvInt("LIBRARR_PORT", 5050),
+		DBPath:         dbPath,
+		TrustedProxies: splitCSV(getEnv("LIBRARR_TRUSTED_PROXIES", "")),
 
 		QBUrl:               getEnv("QB_URL", ""),
 		QBUser:              getEnv("QB_USER", "admin"),
@@ -368,15 +374,16 @@ func buildFromEnv() *Config {
 
 		SettingsFile: deriveSettingsFile(os.Getenv("SETTINGS_FILE"), getEnv("LIBRARR_DB_PATH", "/data/librarr.db")),
 
-		OIDCEnabled:         getEnvBool("OIDC_ENABLED", false),
-		OIDCProviderName:    getEnv("OIDC_PROVIDER_NAME", "SSO"),
-		OIDCIssuer:          getEnv("OIDC_ISSUER", ""),
-		OIDCClientID:        getEnv("OIDC_CLIENT_ID", ""),
-		OIDCClientSecret:    getEnv("OIDC_CLIENT_SECRET", ""),
-		OIDCRedirectURI:     getEnv("OIDC_REDIRECT_URI", ""),
-		OIDCAutoCreateUsers: getEnvBool("OIDC_AUTO_CREATE_USERS", true),
-		OIDCDefaultRole:     getEnv("OIDC_DEFAULT_ROLE", "user"),
-		OIDCProxyHeaders:    getEnvBool("OIDC_PROXY_HEADERS_ENABLED", false),
+		OIDCEnabled:              getEnvBool("OIDC_ENABLED", false),
+		OIDCProviderName:         getEnv("OIDC_PROVIDER_NAME", "SSO"),
+		OIDCIssuer:               getEnv("OIDC_ISSUER", ""),
+		OIDCClientID:             getEnv("OIDC_CLIENT_ID", ""),
+		OIDCClientSecret:         getEnv("OIDC_CLIENT_SECRET", ""),
+		OIDCRedirectURI:          getEnv("OIDC_REDIRECT_URI", ""),
+		OIDCAutoCreateUsers:      getEnvBool("OIDC_AUTO_CREATE_USERS", true),
+		OIDCDefaultRole:          getEnv("OIDC_DEFAULT_ROLE", "user"),
+		OIDCRequireEmailVerified: getEnvBool("OIDC_REQUIRE_EMAIL_VERIFIED", true),
+		OIDCProxyHeaders:         getEnvBool("OIDC_PROXY_HEADERS_ENABLED", false),
 
 		DelugeURL:      getEnv("DELUGE_URL", ""),
 		DelugePassword: getEnv("DELUGE_PASSWORD", ""),
@@ -641,6 +648,21 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// splitCSV splits a comma-separated value into trimmed, non-empty entries.
+func splitCSV(s string) []string {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func getEnvInt(key string, fallback int) int {

@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/JeremiahM37/librarr/internal/config"
+	"github.com/JeremiahM37/librarr/internal/netutil"
 	"github.com/JeremiahM37/librarr/internal/organize"
 	"github.com/JeremiahM37/librarr/internal/zlibraryparse"
 )
@@ -25,11 +26,23 @@ import (
 type DirectDownloader struct {
 	cfg    *config.Config
 	client *http.Client
+	// validate guards outbound download URLs against SSRF. It defaults to
+	// netutil.ValidateOutboundURL; tests that hit loopback httptest servers
+	// override it. A nil validator allows everything.
+	validate func(string) error
 }
 
 // NewDirectDownloader creates a new direct file downloader.
 func NewDirectDownloader(cfg *config.Config, client *http.Client) *DirectDownloader {
-	return &DirectDownloader{cfg: cfg, client: client}
+	return &DirectDownloader{cfg: cfg, client: client, validate: netutil.ValidateOutboundURL}
+}
+
+// checkURL runs the configured SSRF guard against a candidate outbound URL.
+func (d *DirectDownloader) checkURL(rawURL string) error {
+	if d.validate == nil {
+		return nil
+	}
+	return d.validate(rawURL)
 }
 
 var getLinkRe = regexp.MustCompile(`href="(get\.php\?md5=[^"]+)"`)
@@ -189,6 +202,13 @@ func (d *DirectDownloader) downloadFileWithClientAndUserAgent(client *http.Clien
 }
 
 func (d *DirectDownloader) downloadFileAttempt(client *http.Client, fileURL, title string, progressFn func(string), allowChallenge bool, userAgent string) (string, int64, error) {
+	// Re-validate on every hop. This is the single chokepoint every download
+	// request funnels through, including URLs scraped from HTML "GET" pages,
+	// which are attacker-influenced and never pass the entry-point guard.
+	if err := d.checkURL(fileURL); err != nil {
+		return "", 0, err
+	}
+
 	req, err := http.NewRequest("GET", fileURL, nil)
 	if err != nil {
 		return "", 0, err
@@ -552,6 +572,11 @@ func bytesContains(haystack, needle []byte) bool {
 // detectFileExtension inspects the first bytes of a file and returns the
 // appropriate extension for its actual content. Returns "" if the format
 // is not recognized (caller should keep the original extension).
+// DetectFileExtension inspects file magic bytes and returns an appropriate extension.
+func DetectFileExtension(path string) (string, error) {
+	return detectFileExtension(path)
+}
+
 func detectFileExtension(path string) (string, error) {
 	f, err := os.Open(path)
 	if err != nil {
