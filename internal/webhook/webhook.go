@@ -95,13 +95,12 @@ func (s *Sender) Send(payload Payload) {
 			continue
 		}
 		go func(c Config) {
-			select {
-			case s.sem <- struct{}{}:
-				defer func() { <-s.sem }()
-				s.send(c, payload)
-			default:
-				slog.Warn("webhook delivery skipped: concurrency limit reached", "url", c.URL)
-			}
+			// Block until a delivery slot is free rather than dropping the
+			// notification. The semaphore still caps concurrency, but a burst
+			// now backpressures instead of silently losing webhooks.
+			s.sem <- struct{}{}
+			defer func() { <-s.sem }()
+			s.send(c, payload)
 		}(cfg)
 	}
 }

@@ -131,7 +131,7 @@ func (h *OIDCHandler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	oauth2Cfg := h.oauth2
 	if oauth2Cfg.RedirectURL == "" {
 		scheme := "http"
-		if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+		if forwardedProtoHTTPS(r) {
 			scheme = "https"
 		}
 		host := r.Host
@@ -177,7 +177,7 @@ func (h *OIDCHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	oauth2Cfg := h.oauth2
 	if oauth2Cfg.RedirectURL == "" {
 		scheme := "http"
-		if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+		if forwardedProtoHTTPS(r) {
 			scheme = "https"
 		}
 		oauth2Cfg.RedirectURL = fmt.Sprintf("%s://%s/auth/oidc/callback", scheme, r.Host)

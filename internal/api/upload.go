@@ -92,16 +92,19 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify content matches declared extension via magic bytes.
-	if detected, detectErr := download.DetectFileExtension(tmpPath); detectErr == nil && detected != "" {
-		if detected != ext && !(ext == ".zip" && detected == ".epub") {
-			os.Remove(tmpPath)
-			writeJSON(w, http.StatusBadRequest, map[string]interface{}{
-				"success": false,
-				"error":   fmt.Sprintf("File content (%s) does not match extension (%s)", detected, ext),
-			})
-			return
-		}
+	// Verify content matches declared extension via magic bytes. This covers
+	// every allowed family (pdf/zip/rar/mobi/mp3/mp4) and, for .epub, requires a
+	// real EPUB structure so an arbitrary ZIP cannot be uploaded as one. An
+	// unrecognized signature is allowed through (cannot be proven a mismatch).
+	if ok, _, detectErr := download.ContentMatchesExtension(tmpPath, ext); detectErr != nil {
+		slog.Warn("upload content detection failed", "error", detectErr, "ext", ext)
+	} else if !ok {
+		os.Remove(tmpPath)
+		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"success": false,
+			"error":   fmt.Sprintf("File content does not match its extension (%s)", ext),
+		})
+		return
 	}
 
 	username, _ := r.Context().Value(ctxUsername).(string)

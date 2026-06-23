@@ -43,6 +43,7 @@ func TestPipelineDirectDownloadOrganizeImport(t *testing.T) {
 
 	health := search.NewHealthTracker(3, 300)
 	direct := NewDirectDownloader(cfg, srv.Client())
+	direct.validate = nil // httptest serves on loopback; not exercising the SSRF guard here
 	organizer := organize.NewOrganizer(cfg)
 	mgr := NewManager(cfg, database, nil, nil, direct, organizer, nil, health)
 	mgr.SetShutdownContext(context.Background())

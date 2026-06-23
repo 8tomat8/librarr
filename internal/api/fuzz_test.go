@@ -12,7 +12,14 @@ func FuzzQueryBoundedInt(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, raw string) {
-		r := httptest.NewRequest("GET", "/x?limit="+raw, nil)
+		// Set the value through url.Values so arbitrary fuzz input is encoded
+		// into the query instead of being spliced into the request target
+		// (which would break request-line parsing rather than exercise the
+		// parser under test).
+		r := httptest.NewRequest("GET", "/x", nil)
+		q := r.URL.Query()
+		q.Set("limit", raw)
+		r.URL.RawQuery = q.Encode()
 		got := queryBoundedInt(r, "limit", 50, 1, 500)
 		if got < 1 || got > 500 {
 			t.Fatalf("out of bounds: %d for input %q", got, raw)

@@ -14,6 +14,7 @@ import (
 	"github.com/JeremiahM37/librarr/internal/config"
 	"github.com/JeremiahM37/librarr/internal/db"
 	"github.com/JeremiahM37/librarr/internal/download"
+	"github.com/JeremiahM37/librarr/internal/netutil"
 	"github.com/JeremiahM37/librarr/internal/organize"
 	"github.com/JeremiahM37/librarr/internal/search"
 )
@@ -87,7 +88,17 @@ func main() {
 	// Initialize download components.
 	qb := download.NewQBittorrentClient(cfg)
 	sab := download.NewSABnzbdClient(cfg)
-	directDL := download.NewDirectDownloader(cfg, &http.Client{Timeout: 5 * time.Minute})
+	directDL := download.NewDirectDownloader(cfg, &http.Client{
+		Timeout: 5 * time.Minute,
+		// Re-run the SSRF guard on every redirect hop: a public URL can 30x to
+		// an internal address, which the initial check would never see.
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 10 {
+				return fmt.Errorf("stopped after 10 redirects")
+			}
+			return netutil.ValidateOutboundURL(req.URL.String())
+		},
+	})
 	organizer := organize.NewOrganizer(cfg)
 	targets := organize.NewLibraryTargets(cfg)
 	downloadMgr := download.NewManager(cfg, database, qb, sab, directDL, organizer, targets, health)

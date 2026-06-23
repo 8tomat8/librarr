@@ -113,6 +113,7 @@ func TestDownloadFile_PDFSavedAsEPUBGetsRenamed(t *testing.T) {
 	dir := t.TempDir()
 	cfg := &config.Config{IncomingDir: dir, UserAgent: "test"}
 	d := NewDirectDownloader(cfg, server.Client())
+	d.validate = nil // httptest serves on loopback; not exercising the SSRF guard here
 
 	filePath, size, err := d.downloadFile(server.URL, "C in a Nutshell", nil)
 	if err != nil {
@@ -145,6 +146,7 @@ func TestDownloadFile_EPUBKeepsCorrectExtension(t *testing.T) {
 	dir := t.TempDir()
 	cfg := &config.Config{IncomingDir: dir, UserAgent: "test"}
 	d := NewDirectDownloader(cfg, server.Client())
+	d.validate = nil // httptest serves on loopback; not exercising the SSRF guard here
 
 	// downloadFile runs EPUB validation after detection. A fake ZIP will fail
 	// the validation (VerifyEPUBTitle errors -> "allowing download" warn path),
@@ -180,6 +182,7 @@ func TestDownloadFile_UnknownFormatKeepsOriginalExt(t *testing.T) {
 	dir := t.TempDir()
 	cfg := &config.Config{IncomingDir: dir, UserAgent: "test"}
 	d := NewDirectDownloader(cfg, server.Client())
+	d.validate = nil // httptest serves on loopback; not exercising the SSRF guard here
 
 	filePath, _, err := d.downloadFile(server.URL, "Unknown Binary", nil)
 	if err != nil {
@@ -202,6 +205,7 @@ func TestDownloadFile_TooSmallRejected(t *testing.T) {
 	dir := t.TempDir()
 	cfg := &config.Config{IncomingDir: dir, UserAgent: "test"}
 	d := NewDirectDownloader(cfg, server.Client())
+	d.validate = nil // httptest serves on loopback; not exercising the SSRF guard here
 
 	_, _, err := d.downloadFile(server.URL, "Tiny", nil)
 	if err == nil {
@@ -290,6 +294,7 @@ func TestDownloadFile_RenameCollision(t *testing.T) {
 
 	cfg := &config.Config{IncomingDir: dir, UserAgent: "test"}
 	d := NewDirectDownloader(cfg, server.Client())
+	d.validate = nil // httptest serves on loopback; not exercising the SSRF guard here
 
 	path, _, err := d.downloadFile(server.URL, "Collide", nil)
 	if err != nil {

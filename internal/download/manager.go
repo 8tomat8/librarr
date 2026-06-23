@@ -101,6 +101,14 @@ func (m *Manager) StartNZBDownload(nzbURL, title string) (string, error) {
 
 // StartDirectDownload starts a background download from a direct URL.
 func (m *Manager) StartDirectDownload(fileURL, title, source, sourceID string) (*models.DownloadJob, error) {
+	// Validate at the single entry point shared by every caller (API download
+	// handler, request fulfillment, CSV import) so none can bypass the SSRF
+	// guard. Redirect hops and HTML-scraped follow-up URLs are re-validated
+	// downstream in the direct downloader.
+	if err := m.direct.checkURL(fileURL); err != nil {
+		return nil, err
+	}
+
 	job := m.createJob(title, source, fileURL)
 	job.MediaType = "ebook"
 

@@ -48,6 +48,9 @@ type Server struct {
 func NewServer(cfg *config.Config, database *db.DB, searchMgr *search.Manager, downloadMgr *download.Manager, qb *download.QBittorrentClient, sab *download.SABnzbdClient, organizer *organize.Organizer, targets *organize.LibraryTargets) *Server {
 	sessions := NewSessionStore()
 
+	// Configure which reverse proxies may set forwarded headers we honor.
+	setTrustedProxies(cfg.TrustedProxies)
+
 	// Initialize webhook sender.
 	ws := webhook.NewSender()
 	// Load webhook configs from DB.

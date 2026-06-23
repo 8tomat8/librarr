@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/JeremiahM37/librarr/internal/config"
+	"github.com/JeremiahM37/librarr/internal/netutil"
 	"github.com/JeremiahM37/librarr/internal/organize"
 )
 
@@ -19,11 +20,23 @@ import (
 type DirectDownloader struct {
 	cfg    *config.Config
 	client *http.Client
+	// validate guards outbound download URLs against SSRF. It defaults to
+	// netutil.ValidateOutboundURL; tests that hit loopback httptest servers
+	// override it. A nil validator allows everything.
+	validate func(string) error
 }
 
 // NewDirectDownloader creates a new direct file downloader.
 func NewDirectDownloader(cfg *config.Config, client *http.Client) *DirectDownloader {
-	return &DirectDownloader{cfg: cfg, client: client}
+	return &DirectDownloader{cfg: cfg, client: client, validate: netutil.ValidateOutboundURL}
+}
+
+// checkURL runs the configured SSRF guard against a candidate outbound URL.
+func (d *DirectDownloader) checkURL(rawURL string) error {
+	if d.validate == nil {
+		return nil
+	}
+	return d.validate(rawURL)
 }
 
 var getLinkRe = regexp.MustCompile(`href="(get\.php\?md5=[^"]+)"`)
@@ -117,6 +130,13 @@ func (d *DirectDownloader) DownloadFromURL(fileURL, title string, progressFn fun
 }
 
 func (d *DirectDownloader) downloadFile(fileURL, title string, progressFn func(string)) (string, int64, error) {
+	// Re-validate on every hop. downloadFile recurses into URLs scraped from
+	// HTML "GET" pages, which are attacker-influenced and never passed through
+	// the entry-point guard, so each one must be checked here.
+	if err := d.checkURL(fileURL); err != nil {
+		return "", 0, err
+	}
+
 	req, err := http.NewRequest("GET", fileURL, nil)
 	if err != nil {
 		return "", 0, err

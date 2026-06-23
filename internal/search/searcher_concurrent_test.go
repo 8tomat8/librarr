@@ -19,11 +19,11 @@ type mockSearcher struct {
 	err     error
 }
 
-func (m *mockSearcher) Name() string           { return m.name }
-func (m *mockSearcher) Label() string          { return m.name }
-func (m *mockSearcher) Enabled() bool          { return true }
-func (m *mockSearcher) SearchTab() string      { return m.tab }
-func (m *mockSearcher) DownloadType() string   { return "direct" }
+func (m *mockSearcher) Name() string         { return m.name }
+func (m *mockSearcher) Label() string        { return m.name }
+func (m *mockSearcher) Enabled() bool        { return true }
+func (m *mockSearcher) SearchTab() string    { return m.tab }
+func (m *mockSearcher) DownloadType() string { return "direct" }
 func (m *mockSearcher) Search(_ context.Context, query string) ([]models.SearchResult, error) {
 	if m.delay > 0 {
 		time.Sleep(m.delay)
