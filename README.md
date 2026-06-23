@@ -44,7 +44,7 @@ Librarr searches all configured indexers in parallel, scores results by confiden
 
 ### Download Management
 
-- **4 download clients** -- qBittorrent, Transmission, Deluge, SABnzbd with priority ordering
+- **Multiple download clients** -- qBittorrent or Transmission for torrents, plus SABnzbd for Usenet
 - **Request/approval workflow** -- pending, approved, searching, downloading, completed states with per-request notifications
 - **Scheduled wishlist searches** -- background scheduler auto-searches and downloads wishlist items on a configurable interval
 - **Torrent completion watcher** -- polls download client, auto-imports completed downloads
@@ -203,11 +203,26 @@ All configuration is via environment variables. Every variable has a sensible de
 | `OIDC_REDIRECT_URI` | | Callback URL (`https://librarr.example.com/auth/oidc/callback`) |
 | `OIDC_AUTO_CREATE_USERS` | `true` | Auto-create users on first OIDC login |
 | `OIDC_DEFAULT_ROLE` | `user` | Default role for OIDC-created users |
+| `OIDC_PROXY_HEADERS_ENABLED` | `false` | Trust Authentik identity headers from a reverse proxy |
+
+When `OIDC_PROXY_HEADERS_ENABLED=true` and Librarr sits behind a trusted reverse
+proxy that injects Authentik headers like `X-Authentik-Username`, it will treat
+those requests as an authenticated SSO session, auto-provision the local user if
+needed, and skip the manual "Login with SSO" click. Enable this only for
+proxy-gated deployments.
+Local logout only clears Librarr's session cookie; if the proxy keeps sending
+the identity header, the next request will sign the browser back in.
 
 ### Download Clients
 
+Librarr sends torrents to **either qBittorrent or Transmission**. Configure one,
+or configure both and choose with `TORRENT_CLIENT`. The category/save-path
+settings below apply to both (Transmission uses the category as a torrent label,
+which requires Transmission 3.0+).
+
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `TORRENT_CLIENT` | | Active torrent backend when both are configured: empty (auto, qBittorrent preferred), `qbittorrent`, or `transmission` |
 | `QB_URL` | | qBittorrent Web UI URL |
 | `QB_USER` | `admin` | qBittorrent username |
 | `QB_PASS` | | qBittorrent password |
@@ -218,6 +233,10 @@ All configuration is via environment variables. Every variable has a sensible de
 | `QB_MANGA_SAVE_PATH` | `/manga-incoming` | Manga download path |
 | `QB_MANGA_CATEGORY` | `manga` | Torrent category for manga |
 | `QB_PRIORITY` | `1` | Download client priority (lower = preferred) |
+| `REMOVE_TORRENT_AFTER_IMPORT` | `true` | Remove torrent from the torrent client after a successful import. Set to `false` to keep seeding (required for private trackers with seed-time minimums). |
+| `TRANSMISSION_URL` | | Transmission RPC URL (e.g. `http://transmission:9091`) |
+| `TRANSMISSION_USER` | | Transmission RPC username (optional — only if RPC auth is enabled) |
+| `TRANSMISSION_PASS` | | Transmission RPC password (optional) |
 | `SABNZBD_URL` | | SABnzbd URL |
 | `SABNZBD_API_KEY` | | SABnzbd API key |
 | `SABNZBD_CATEGORY` | `librarr` | NZB download category |
@@ -293,6 +312,9 @@ Legacy per-source env vars (e.g. `PROWLARR_URL` and other per-driver overrides) 
 | `RATE_LIMIT_ENABLED` | `true` | Per-source rate limiting |
 | `METRICS_ENABLED` | `true` | Prometheus metrics endpoint |
 | `WEBNOVEL_ENABLED` | `true` | Web novel search (requires lncrawl container) |
+| `WISHLIST_CLEANUP_ENABLED` | `false` | Periodically remove wishlist items already found in the library |
+| `WISHLIST_CLEANUP_INTERVAL_HOURS` | `12` | Hours between wishlist cleanup scans |
+| `WISHLIST_CLEANUP_DRY_RUN` | `true` | Log conservative wishlist cleanup matches without deleting |
 | `MANGADEX_ENABLED` | `true` | MangaDex search |
 | `AUTHOR_MONITOR_ENABLED` | `false` | Background author monitoring |
 
@@ -518,6 +540,7 @@ Legacy per-source env vars (e.g. `PROWLARR_URL` and other per-driver overrides) 
 |--------|------|-------------|
 | POST | `/api/test/prowlarr` | Test Prowlarr connection |
 | POST | `/api/test/qbittorrent` | Test qBittorrent connection |
+| POST | `/api/test/transmission` | Test Transmission connection |
 | POST | `/api/test/audiobookshelf` | Test Audiobookshelf connection |
 | POST | `/api/test/kavita` | Test Kavita connection |
 | POST | `/api/test/sabnzbd` | Test SABnzbd connection |

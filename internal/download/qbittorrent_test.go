@@ -402,3 +402,37 @@ func newAddTorrentTestQBClient(serverURL string, client *http.Client) *QBittorre
 	q.client = client
 	return q
 }
+
+func TestGetTorrentFiles(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v2/auth/login":
+			http.SetCookie(w, &http.Cookie{Name: "SID", Value: "test"})
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("Ok."))
+		case "/api/v2/torrents/files":
+			hash := r.URL.Query().Get("hash")
+			if hash == "testhash" {
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte(`[{"name": "RootFolder/file1.mp3"}, {"name": "RootFolder/file2.mp3"}]`))
+				return
+			}
+			w.WriteHeader(http.StatusNotFound)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	q := newTestQBClient(srv.URL)
+	files, err := q.GetTorrentFiles("testhash")
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+	if len(files) != 2 {
+		t.Fatalf("expected 2 files, got: %d", len(files))
+	}
+	if files[0].Name != "RootFolder/file1.mp3" {
+		t.Errorf("expected RootFolder/file1.mp3, got: %s", files[0].Name)
+	}
+}

@@ -72,10 +72,10 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleTorrentDownload(w http.ResponseWriter, r *http.Request, req models.DownloadRequest) {
-	if !s.cfg.HasQBittorrent() {
+	if !s.cfg.HasTorrentClient() {
 		writeJSON(w, http.StatusBadRequest, map[string]interface{}{
 			"success": false,
-			"error":   "qBittorrent not configured",
+			"error":   "No torrent download client configured",
 		})
 		return
 	}
@@ -187,7 +187,7 @@ func (s *Server) handleDirectDownloadReq(w http.ResponseWriter, req models.Downl
 			return
 		}
 
-		job, err := s.downloadMgr.StartDirectDownload(dlURL, req.Title, req.Source, sourceID)
+		job, err := s.downloadMgr.StartDirectDownload(dlURL, req.Title, req.Source, sourceID, req.Author)
 		if err != nil {
 			slog.Error("direct download start failed", "title", req.Title, "error", err)
 			writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
@@ -308,6 +308,9 @@ func (s *Server) handleCheckDuplicate(w http.ResponseWriter, r *http.Request) {
 }
 
 func extractSourceID(req models.DownloadRequest) string {
+	if req.SourceID != "" {
+		return req.SourceID
+	}
 	if req.MD5 != "" {
 		return req.MD5
 	}

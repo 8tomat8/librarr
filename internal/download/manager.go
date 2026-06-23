@@ -1,7 +1,7 @@
 package download
 
 import (
-	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -20,22 +20,16 @@ import (
 type Manager struct {
 	cfg           *config.Config
 	db            *db.DB
-	qb            *QBittorrentClient
+	torrent       TorrentClient
 	sab           *SABnzbdClient
 	direct        *DirectDownloader
 	organizer     *organize.Organizer
 	targets       *organize.LibraryTargets
 	health        *search.HealthTracker
 	webhookSender *webhook.Sender
-	shutdown      context.Context
 
 	mu   sync.Mutex
 	jobs map[string]*models.DownloadJob
-}
-
-// SetShutdownContext ties background retry goroutines to server shutdown.
-func (m *Manager) SetShutdownContext(ctx context.Context) {
-	m.shutdown = ctx
 }
 
 // SetWebhookSender sets the webhook sender for download notifications.
@@ -44,11 +38,11 @@ func (m *Manager) SetWebhookSender(ws *webhook.Sender) {
 }
 
 // NewManager creates a download manager.
-func NewManager(cfg *config.Config, database *db.DB, qb *QBittorrentClient, sab *SABnzbdClient, direct *DirectDownloader, organizer *organize.Organizer, targets *organize.LibraryTargets, health *search.HealthTracker) *Manager {
+func NewManager(cfg *config.Config, database *db.DB, torrent TorrentClient, sab *SABnzbdClient, direct *DirectDownloader, organizer *organize.Organizer, targets *organize.LibraryTargets, health *search.HealthTracker) *Manager {
 	m := &Manager{
 		cfg:       cfg,
 		db:        database,
-		qb:        qb,
+		torrent:   torrent,
 		sab:       sab,
 		direct:    direct,
 		organizer: organizer,
@@ -63,6 +57,9 @@ func NewManager(cfg *config.Config, database *db.DB, qb *QBittorrentClient, sab 
 		for _, j := range existingJobs {
 			j := j
 			m.jobs[j.ID] = &j
+			if isActiveJobStatus(j.Status) {
+				m.updateJob(&j, "dead_letter", "Interrupted by restart", "Download worker stopped before the job finished. Retry the download if needed.")
+			}
 		}
 		if len(existingJobs) > 0 {
 			slog.Info("loaded existing download jobs", "count", len(existingJobs))
@@ -70,6 +67,15 @@ func NewManager(cfg *config.Config, database *db.DB, qb *QBittorrentClient, sab 
 	}
 
 	return m
+}
+
+func isActiveJobStatus(status string) bool {
+	switch status {
+	case "queued", "searching", "downloading", "importing", "retry_wait":
+		return true
+	default:
+		return false
+	}
 }
 
 // StartAnnasDownload starts a background download from Anna's Archive.
@@ -86,9 +92,12 @@ func (m *Manager) StartAnnasDownload(md5, title string) (*models.DownloadJob, er
 	return job, nil
 }
 
-// StartTorrentDownload adds a torrent to qBittorrent.
+// StartTorrentDownload adds a torrent to the active torrent client.
 func (m *Manager) StartTorrentDownload(torrentURL, title, savePath, category string) error {
-	return m.qb.AddTorrent(torrentURL, title, savePath, category)
+	if m.torrent == nil {
+		return fmt.Errorf("no torrent download client configured")
+	}
+	return m.torrent.AddTorrent(torrentURL, title, savePath, category)
 }
 
 // StartNZBDownload sends an NZB URL to SABnzbd.
@@ -100,7 +109,7 @@ func (m *Manager) StartNZBDownload(nzbURL, title string) (string, error) {
 }
 
 // StartDirectDownload starts a background download from a direct URL.
-func (m *Manager) StartDirectDownload(fileURL, title, source, sourceID string) (*models.DownloadJob, error) {
+func (m *Manager) StartDirectDownload(fileURL, title, source, sourceID, author string) (*models.DownloadJob, error) {
 	// Validate at the single entry point shared by every caller (API download
 	// handler, request fulfillment, CSV import) so none can bypass the SSRF
 	// guard. Redirect hops and HTML-scraped follow-up URLs are re-validated
@@ -111,17 +120,18 @@ func (m *Manager) StartDirectDownload(fileURL, title, source, sourceID string) (
 
 	job := m.createJob(title, source, fileURL)
 	job.MediaType = "ebook"
+	job.SourceID = sourceID
 
 	if err := m.db.SaveJob(job); err != nil {
 		return nil, err
 	}
 
-	go m.runDirectDownload(job, fileURL, sourceID)
+	go m.runDirectDownload(job, fileURL, sourceID, author)
 	return job, nil
 }
 
 func (m *Manager) createJob(title, source, url string) *models.DownloadJob {
-	id := fmt.Sprintf("%x", time.Now().UnixNano()%0xFFFFFFFF)[:8]
+	id := fmt.Sprintf("%08x", time.Now().UnixNano()%0xFFFFFFFF)
 
 	job := &models.DownloadJob{
 		ID:         id,
@@ -189,6 +199,17 @@ func (m *Manager) updateJob(job *models.DownloadJob, status, detail, errMsg stri
 	_ = m.db.UpdateJobStatus(job.ID, status, detail, errMsg)
 }
 
+// setJobProgress updates a job's progress detail under the manager lock. The
+// download progress callbacks run on the worker goroutine while other readers
+// (status pollers, API handlers) may inspect the same job, so these writes must
+// be synchronized like the rest of the job mutations.
+func (m *Manager) setJobProgress(job *models.DownloadJob, detail string) {
+	m.mu.Lock()
+	job.Detail = detail
+	job.UpdatedAt = time.Now()
+	m.mu.Unlock()
+}
+
 // RetryDeadLetterJob manually retries a dead letter job.
 func (m *Manager) RetryDeadLetterJob(jobID string) error {
 	m.mu.Lock()
@@ -218,7 +239,7 @@ func (m *Manager) RetryDeadLetterJob(jobID string) error {
 	if job.MD5 != "" {
 		go m.runAnnasDownload(job)
 	} else if job.URL != "" {
-		go m.runDirectDownload(job, job.URL, "")
+		go m.runDirectDownload(job, job.URL, job.SourceID, "")
 	}
 
 	return nil
@@ -228,31 +249,29 @@ func (m *Manager) runAnnasDownload(job *models.DownloadJob) {
 	m.updateJob(job, "downloading", "Downloading from Anna's Archive...", "")
 
 	filePath, fileSize, err := m.direct.DownloadFromAnnas(job.MD5, job.Title, func(detail string) {
-		m.mu.Lock()
-		job.Detail = detail
-		job.UpdatedAt = time.Now()
-		m.mu.Unlock()
+		m.setJobProgress(job, detail)
 	})
 	if err != nil {
 		slog.Error("anna's archive download failed", "title", job.Title, "error", err)
 		m.health.RecordFailure("annas", err.Error(), "download")
+		if isAnnasNoMatchError(err) {
+			m.updateJob(job, "dead_letter", "No LibGen match found", err.Error())
+			if m.webhookSender != nil {
+				m.webhookSender.Send(webhook.Payload{
+					Event:   webhook.EventDownloadFailed,
+					Title:   "Download Failed",
+					Message: fmt.Sprintf("'%s' could not be downloaded automatically: %s", job.Title, err.Error()),
+					Status:  "failed",
+				})
+			}
+			return
+		}
 		if job.RetryCount < job.MaxRetries {
 			job.RetryCount++
 			m.updateJob(job, "retry_wait", fmt.Sprintf("Retry %d/%d scheduled", job.RetryCount, job.MaxRetries), err.Error())
 			go func() {
-				timer := time.NewTimer(time.Duration(m.cfg.RetryBackoffSeconds) * time.Second)
-				defer timer.Stop()
-				if m.shutdown != nil {
-					select {
-					case <-timer.C:
-						m.runAnnasDownload(job)
-					case <-m.shutdown.Done():
-						return
-					}
-				} else {
-					<-timer.C
-					m.runAnnasDownload(job)
-				}
+				time.Sleep(time.Duration(m.cfg.RetryBackoffSeconds) * time.Second)
+				m.runAnnasDownload(job)
 			}()
 		} else {
 			m.updateJob(job, "dead_letter", "Max retries exceeded", err.Error())
@@ -321,14 +340,37 @@ func (m *Manager) runAnnasDownload(job *models.DownloadJob) {
 	}
 }
 
-func (m *Manager) runDirectDownload(job *models.DownloadJob, fileURL, sourceID string) {
+func isAnnasNoMatchError(err error) bool {
+	if err == nil {
+		return false
+	}
+	// Primary: sentinel match (works regardless of how the user-facing
+	// message gets reworded or localized later).
+	if errors.Is(err, errLibgenNoMatch) {
+		return true
+	}
+	// Fallback: string match. Covers any path that builds a no-match message
+	// without going through noMatchError or fetchLibgenDownloadURL — e.g.
+	// an error string round-tripped through the job DB from an older build
+	// that didn't wrap.
+	msg := err.Error()
+	return strings.Contains(msg, "matching LibGen MD5") ||
+		strings.Contains(msg, "libgen no matching MD5") ||
+		strings.Contains(msg, "File not found in DB")
+}
+
+func (m *Manager) runDirectDownload(job *models.DownloadJob, fileURL, sourceID, authorHint string) {
 	m.updateJob(job, "downloading", "Downloading...", "")
 
-	filePath, fileSize, err := m.direct.DownloadFromURL(fileURL, job.Title, func(detail string) {
-		m.mu.Lock()
-		job.Detail = detail
-		job.UpdatedAt = time.Now()
-		m.mu.Unlock()
+	download := m.direct.DownloadFromURL
+	if job.Source == "zlibrary" {
+		download = func(url, title string, progressFn func(string)) (string, int64, error) {
+			return m.direct.DownloadFromZLibrary(url, title, authorHint, sourceID, progressFn)
+		}
+	}
+
+	filePath, fileSize, err := download(fileURL, job.Title, func(detail string) {
+		m.setJobProgress(job, detail)
 	})
 	if err != nil {
 		slog.Error("direct download failed", "title", job.Title, "error", err)
@@ -361,7 +403,7 @@ func (m *Manager) runDirectDownload(job *models.DownloadJob, fileURL, sourceID s
 		FileFormat:   "epub",
 		MediaType:    "ebook",
 		Source:       job.Source,
-		SourceID:     sourceID,
+		SourceID:     job.SourceID,
 	})
 
 	// Trigger library imports.
@@ -389,8 +431,8 @@ func (m *Manager) runDirectDownload(job *models.DownloadJob, fileURL, sourceID s
 func (m *Manager) GetDownloads() []models.DownloadStatus {
 	var downloads []models.DownloadStatus
 
-	// qBittorrent torrents.
-	if m.cfg.HasQBittorrent() {
+	// Active torrent client (qBittorrent or Transmission).
+	if m.torrent != nil {
 		for _, cat := range []struct {
 			name  string
 			label string
@@ -399,7 +441,7 @@ func (m *Manager) GetDownloads() []models.DownloadStatus {
 			{m.cfg.QBAudiobookCategory, "audiobook"},
 			{m.cfg.QBMangaCategory, "manga"},
 		} {
-			torrents, err := m.qb.GetTorrents(cat.name)
+			torrents, err := m.torrent.GetTorrents(cat.name)
 			if err != nil {
 				continue
 			}
@@ -468,9 +510,12 @@ func mapSABStatus(status string) string {
 	}
 }
 
-// DeleteTorrent removes a torrent from qBittorrent.
+// DeleteTorrent removes a torrent from the active torrent client.
 func (m *Manager) DeleteTorrent(hash string) error {
-	return m.qb.DeleteTorrent(hash, true)
+	if m.torrent == nil {
+		return fmt.Errorf("no torrent download client configured")
+	}
+	return m.torrent.DeleteTorrent(hash, true)
 }
 
 // DeleteJob removes a background download job.
@@ -498,18 +543,18 @@ func (m *Manager) ClearFinished() (int, int, error) {
 		return jobsCleared, 0, err
 	}
 
-	// Clear completed qBittorrent torrents.
+	// Clear completed torrents from the active torrent client.
 	torrentsCleared := 0
-	if m.cfg.HasQBittorrent() {
+	if m.torrent != nil {
 		for _, cat := range []string{m.cfg.QBCategory, m.cfg.QBAudiobookCategory, m.cfg.QBMangaCategory} {
-			torrents, err := m.qb.GetTorrents(cat)
+			torrents, err := m.torrent.GetTorrents(cat)
 			if err != nil {
 				continue
 			}
 			for _, t := range torrents {
 				status := MapTorrentStatus(t.State)
 				if status == "completed" || t.State == "error" || t.State == "missingFiles" {
-					if err := m.qb.DeleteTorrent(t.Hash, false); err == nil {
+					if err := m.torrent.DeleteTorrent(t.Hash, false); err == nil {
 						torrentsCleared++
 					}
 				}

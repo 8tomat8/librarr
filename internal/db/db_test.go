@@ -165,6 +165,7 @@ func TestDownloadJobs_CRUD(t *testing.T) {
 		Status:     "queued",
 		URL:        "https://example.com",
 		MD5:        "abc123",
+		SourceID:   "zlibrary-42-abc123",
 		MediaType:  "ebook",
 		MaxRetries: 2,
 		CreatedAt:  time.Now(),
@@ -186,6 +187,9 @@ func TestDownloadJobs_CRUD(t *testing.T) {
 		}
 		if got.Source != "annas" {
 			t.Errorf("expected source annas, got %s", got.Source)
+		}
+		if got.SourceID != "zlibrary-42-abc123" {
+			t.Errorf("expected source_id zlibrary-42-abc123, got %s", got.SourceID)
 		}
 	})
 

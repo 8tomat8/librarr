@@ -127,7 +127,7 @@ func (s *Server) handleCSVImport(w http.ResponseWriter, r *http.Request) {
 				if dlURL == "" {
 					dlURL = best.EpubURL
 				}
-				s.downloadMgr.StartDirectDownload(dlURL, title, best.Source, best.SourceID)
+				s.downloadMgr.StartDirectDownload(dlURL, title, best.Source, best.SourceID, best.Author)
 			} else if best.MagnetURL != "" || best.InfoHash != "" {
 				url := best.MagnetURL
 				if url == "" {

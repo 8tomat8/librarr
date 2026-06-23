@@ -131,7 +131,7 @@ func (h *OIDCHandler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	oauth2Cfg := h.oauth2
 	if oauth2Cfg.RedirectURL == "" {
 		scheme := "http"
-		if forwardedProtoHTTPS(r) {
+		if isSecureRequest(r) {
 			scheme = "https"
 		}
 		host := r.Host
@@ -177,7 +177,7 @@ func (h *OIDCHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	oauth2Cfg := h.oauth2
 	if oauth2Cfg.RedirectURL == "" {
 		scheme := "http"
-		if forwardedProtoHTTPS(r) {
+		if isSecureRequest(r) {
 			scheme = "https"
 		}
 		oauth2Cfg.RedirectURL = fmt.Sprintf("%s://%s/auth/oidc/callback", scheme, r.Host)
@@ -250,52 +250,21 @@ func (h *OIDCHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	slog.Info("OIDC login", "username", username, "email", claims.Email, "sub", claims.Sub)
 
 	// Find or create user.
-	user, err := h.db.GetUserByUsername(username)
+	user, err := resolveOIDCUser(h.cfg, h.db, username)
 	if err != nil {
-		// User doesn't exist.
-		if !h.cfg.OIDCAutoCreateUsers {
-			http.Error(w, "User not found and auto-creation is disabled", http.StatusForbidden)
-			return
-		}
-
-		// Determine role: first user is admin, otherwise use default.
-		userCount, _ := h.db.CountUsers()
-		role := h.cfg.OIDCDefaultRole
-		if userCount == 0 {
-			role = "admin"
-		}
-
-		// Create user with a random password (OIDC users don't use password login).
-		randomPass := make([]byte, 32)
-		rand.Read(randomPass)
-		passHash, _ := hashPassword(hex.EncodeToString(randomPass))
-
-		id, err := h.db.CreateUser(username, passHash, role)
-		if err != nil {
-			slog.Error("failed to create OIDC user", "username", username, "error", err)
-			http.Error(w, "Failed to create user account", http.StatusInternalServerError)
-			return
-		}
-
-		user, err = h.db.GetUser(id)
-		if err != nil {
-			http.Error(w, "Failed to retrieve created user", http.StatusInternalServerError)
-			return
-		}
-
-		slog.Info("OIDC user created", "id", id, "username", username, "role", role)
+		slog.Error("failed to resolve OIDC user", "username", username, "error", err)
+		http.Error(w, err.Error(), http.StatusForbidden)
+		return
+	}
+	if user == nil {
+		http.Error(w, "Failed to resolve OIDC user", http.StatusInternalServerError)
+		return
 	}
 
 	// Create session.
 	h.db.UpdateLastLogin(user.ID)
-	sessionToken, err := h.sessions.Create(user.ID, user.Username, user.Role)
-	if err != nil {
-		slog.Error("failed to create OIDC session", "error", err)
-		http.Error(w, "Failed to create session", http.StatusInternalServerError)
-		return
-	}
-
-	http.SetCookie(w, sessionCookie(r, sessionToken, 86400))
+	sessionToken := h.sessions.Create(user.ID, user.Username, user.Role)
+	setSessionCookie(w, r, sessionToken, 86400)
 
 	// Redirect to app root.
 	http.Redirect(w, r, "/", http.StatusFound)

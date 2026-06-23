@@ -80,11 +80,9 @@ func NewSessionStore() *SessionStore {
 }
 
 // Create generates a new session token for a user, valid for 24 hours.
-func (s *SessionStore) Create(userID int64, username, role string) (string, error) {
+func (s *SessionStore) Create(userID int64, username, role string) string {
 	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
+	rand.Read(b)
 	token := hex.EncodeToString(b)
 
 	s.mu.Lock()
@@ -96,15 +94,13 @@ func (s *SessionStore) Create(userID int64, username, role string) (string, erro
 	}
 	s.mu.Unlock()
 
-	return token, nil
+	return token
 }
 
 // CreatePendingTOTP creates a temporary token for TOTP verification (5 min expiry).
-func (s *SessionStore) CreatePendingTOTP(userID int64) (string, error) {
+func (s *SessionStore) CreatePendingTOTP(userID int64) string {
 	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
+	rand.Read(b)
 	token := hex.EncodeToString(b)
 
 	s.mu.Lock()
@@ -114,7 +110,7 @@ func (s *SessionStore) CreatePendingTOTP(userID int64) (string, error) {
 	}
 	s.mu.Unlock()
 
-	return token, nil
+	return token
 }
 
 // ValidatePendingTOTP checks and consumes a pending TOTP token.
@@ -194,9 +190,8 @@ func isExempt(path string) bool {
 	if strings.HasPrefix(path, "/static/") {
 		return true
 	}
-	// OPDS: only root catalog and OpenSearch descriptor are public when auth
-	// is enabled. Books, search, and download require a session or API key.
-	if path == "/opds" || path == "/opds/" || path == "/opds/opensearch.xml" {
+	// OPDS feeds (e-readers handle auth separately).
+	if strings.HasPrefix(path, "/opds") {
 		return true
 	}
 	// Prometheus metrics.
@@ -217,11 +212,37 @@ func authMiddleware(cfg *config.Config, database *db.DB, sessions *SessionStore,
 		userCount, _ := database.CountUsers()
 		multiUser := userCount > 0
 
-		// Open install with no auth configured: grant admin so settings and other
-		// requireAdmin endpoints remain usable (otherwise every admin route 403s).
+		// Trusted reverse-proxy SSO headers should short-circuit the normal
+		// login flow when OIDC is configured. This lets Authentik-backed
+		// deployments log users in transparently instead of requiring a second
+		// click on the Librarr login button.
+		if cfg != nil && cfg.HasOIDCProxyHeaders() {
+			username := proxyIdentityFromRequest(r)
+			if username != "" {
+				if user, err := resolveOIDCUser(cfg, database, username); err == nil && user != nil {
+					if sessions != nil {
+						if ensureSessionForUser(w, r, sessions, user) {
+							_ = database.UpdateLastLogin(user.ID)
+						}
+					}
+					ctx := context.WithValue(r.Context(), ctxUserID, user.ID)
+					ctx = context.WithValue(ctx, ctxUserRole, user.Role)
+					ctx = context.WithValue(ctx, ctxUsername, user.Username)
+					next.ServeHTTP(w, r.WithContext(ctx))
+					return
+				} else if err != nil && cfg != nil && cfg.HasOIDC() {
+					slog.Warn("proxy SSO login rejected", "username", username, "error", err)
+				}
+			}
+		}
+
+		// No multi-user, no legacy auth, no API key: the instance is open.
+		// Treat the local caller as an admin rather than passing through
+		// role-less, so admin-gated routes (e.g. POST /api/settings) work on
+		// userless instances instead of failing requireAdmin with a 403.
 		if !multiUser && !cfg.HasAuth() && !cfg.HasAPIKey() {
 			ctx := context.WithValue(r.Context(), ctxUserRole, "admin")
-			ctx = context.WithValue(ctx, ctxUsername, "anonymous")
+			ctx = context.WithValue(ctx, ctxUsername, "local")
 			next.ServeHTTP(w, r.WithContext(ctx))
 			return
 		}
@@ -237,9 +258,6 @@ func authMiddleware(cfg *config.Config, database *db.DB, sessions *SessionStore,
 			apiKey := r.Header.Get("X-Api-Key")
 			if apiKey == "" {
 				apiKey = r.URL.Query().Get("apikey")
-				if apiKey != "" {
-					slog.Warn("API key supplied via query parameter; prefer X-Api-Key header to avoid log/history leakage")
-				}
 			}
 			if subtle.ConstantTimeCompare([]byte(apiKey), []byte(cfg.APIKey)) == 1 {
 				// API key users get admin-level access.
@@ -356,11 +374,7 @@ func handleLogin(cfg *config.Config, database *db.DB, sessions *SessionStore) ht
 
 			// If TOTP is enabled, return pending token.
 			if user.TOTPEnabled {
-				pendingToken, err := sessions.CreatePendingTOTP(user.ID)
-				if err != nil {
-					writeError(w, http.StatusInternalServerError, "Failed to create session", err)
-					return
-				}
+				pendingToken := sessions.CreatePendingTOTP(user.ID)
 				writeJSON(w, http.StatusOK, map[string]interface{}{
 					"success":         true,
 					"needs_totp":      true,
@@ -371,12 +385,8 @@ func handleLogin(cfg *config.Config, database *db.DB, sessions *SessionStore) ht
 
 			// No TOTP — create full session.
 			database.UpdateLastLogin(user.ID)
-			token, err := sessions.Create(user.ID, user.Username, user.Role)
-			if err != nil {
-				writeError(w, http.StatusInternalServerError, "Failed to create session", err)
-				return
-			}
-			http.SetCookie(w, sessionCookie(r, token, 86400))
+			token := sessions.Create(user.ID, user.Username, user.Role)
+			setSessionCookie(w, r, token, 86400)
 
 			database.LogActivity(user.Username, "login", user.Username, "User logged in")
 
@@ -406,12 +416,8 @@ func handleLogin(cfg *config.Config, database *db.DB, sessions *SessionStore) ht
 			return
 		}
 
-		token, err := sessions.Create(0, cfg.AuthUsername, "admin")
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "Failed to create session", err)
-			return
-		}
-		http.SetCookie(w, sessionCookie(r, token, 86400))
+		token := sessions.Create(0, cfg.AuthUsername, "admin")
+		setSessionCookie(w, r, token, 86400)
 
 		database.LogActivity(cfg.AuthUsername, "login", cfg.AuthUsername, "User logged in (legacy)")
 
@@ -460,12 +466,8 @@ func handleLoginTOTP(database *db.DB, sessions *SessionStore) http.HandlerFunc {
 		// Try TOTP code first.
 		if validateTOTPCode(user.TOTPSecret, req.Code) {
 			database.UpdateLastLogin(user.ID)
-			token, err := sessions.Create(user.ID, user.Username, user.Role)
-			if err != nil {
-				writeError(w, http.StatusInternalServerError, "Failed to create session", err)
-				return
-			}
-			http.SetCookie(w, sessionCookie(r, token, 86400))
+			token := sessions.Create(user.ID, user.Username, user.Role)
+			setSessionCookie(w, r, token, 86400)
 			writeJSON(w, http.StatusOK, map[string]interface{}{
 				"success":  true,
 				"token":    token,
@@ -480,12 +482,8 @@ func handleLoginTOTP(database *db.DB, sessions *SessionStore) http.HandlerFunc {
 		used, _ := database.UseBackupCode(user.ID, codeHash)
 		if used {
 			database.UpdateLastLogin(user.ID)
-			token, err := sessions.Create(user.ID, user.Username, user.Role)
-			if err != nil {
-				writeError(w, http.StatusInternalServerError, "Failed to create session", err)
-				return
-			}
-			http.SetCookie(w, sessionCookie(r, token, 86400))
+			token := sessions.Create(user.ID, user.Username, user.Role)
+			setSessionCookie(w, r, token, 86400)
 			writeJSON(w, http.StatusOK, map[string]interface{}{
 				"success":          true,
 				"token":            token,
@@ -605,12 +603,8 @@ func handleRegister(database *db.DB, sessions *SessionStore) http.HandlerFunc {
 		// If first user, auto-login.
 		if isFirstUser {
 			database.UpdateLastLogin(id)
-			token, err := sessions.Create(id, req.Username, role)
-			if err != nil {
-				writeError(w, http.StatusInternalServerError, "Failed to create session", err)
-				return
-			}
-			http.SetCookie(w, sessionCookie(r, token, 86400))
+			token := sessions.Create(id, req.Username, role)
+			setSessionCookie(w, r, token, 86400)
 			writeJSON(w, http.StatusCreated, map[string]interface{}{
 				"success":  true,
 				"id":       id,
@@ -649,8 +643,19 @@ func handleAuthStatus(cfg *config.Config, database *db.DB, sessions *SessionStor
 			resp["oidc_provider_name"] = cfg.OIDCProviderName
 		}
 
+		if username, _ := r.Context().Value(ctxUsername).(string); username != "" {
+			resp["authenticated"] = true
+			resp["username"] = username
+		}
+		if role, _ := r.Context().Value(ctxUserRole).(string); role != "" {
+			resp["role"] = role
+		}
+		if userID, _ := r.Context().Value(ctxUserID).(int64); userID != 0 {
+			resp["user_id"] = userID
+		}
+
 		// Check session.
-		cookie, err := r.Cookie("librarr_session")
+		cookie, err := r.Cookie(sessionCookieName)
 		if err == nil {
 			if data, ok := sessions.Get(cookie.Value); ok {
 				resp["authenticated"] = true
@@ -923,7 +928,7 @@ func handleLogout(sessions *SessionStore, database *db.DB) http.HandlerFunc {
 			sessions.Delete(cookie.Value)
 		}
 		database.LogActivity(username, "logout", username, "User logged out")
-		http.SetCookie(w, clearSessionCookie(r))
+		setSessionCookie(w, r, "", -1)
 		writeJSON(w, http.StatusOK, map[string]interface{}{"success": true})
 	}
 }

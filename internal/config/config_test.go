@@ -14,6 +14,7 @@ func TestLoad_Defaults(t *testing.T) {
 		"MIN_TORRENT_SIZE_BYTES", "MAX_TORRENT_SIZE_BYTES",
 		"AUTH_USERNAME", "AUTH_PASSWORD", "API_KEY",
 		"OIDC_ENABLED", "OIDC_ISSUER", "OIDC_CLIENT_ID", "OIDC_CLIENT_SECRET",
+		"OIDC_PROXY_HEADERS_ENABLED",
 	} {
 		os.Unsetenv(key)
 	}
@@ -65,6 +66,12 @@ func TestLoad_Defaults(t *testing.T) {
 		}
 	})
 
+	t.Run("OIDC proxy headers disabled by default", func(t *testing.T) {
+		if cfg.OIDCProxyHeaders {
+			t.Error("expected OIDCProxyHeaders=false by default")
+		}
+	})
+
 	t.Run("rate limit enabled by default", func(t *testing.T) {
 		if !cfg.RateLimitEnabled {
 			t.Error("expected RateLimitEnabled=true by default")
@@ -79,10 +86,12 @@ func TestLoad_EnvOverrides(t *testing.T) {
 	os.Setenv("FILE_ORG_ENABLED", "false")
 	os.Setenv("ANNAS_ARCHIVE_DOMAIN", "annas-archive.org")
 	os.Setenv("MIN_TORRENT_SIZE_BYTES", "50000")
+	os.Setenv("OIDC_PROXY_HEADERS_ENABLED", "true")
 	defer func() {
 		for _, key := range []string{
 			"LIBRARR_PORT", "LIBRARR_DB_PATH", "QB_URL",
 			"FILE_ORG_ENABLED", "ANNAS_ARCHIVE_DOMAIN", "MIN_TORRENT_SIZE_BYTES",
+			"OIDC_PROXY_HEADERS_ENABLED",
 		} {
 			os.Unsetenv(key)
 		}
@@ -107,6 +116,9 @@ func TestLoad_EnvOverrides(t *testing.T) {
 	}
 	if cfg.MinTorrentSizeBytes != 50000 {
 		t.Errorf("expected 50000, got %d", cfg.MinTorrentSizeBytes)
+	}
+	if !cfg.OIDCProxyHeaders {
+		t.Error("expected OIDCProxyHeaders=true with env override")
 	}
 }
 
@@ -405,5 +417,35 @@ func TestRemoveTorrentAfterImportDisabled(t *testing.T) {
 	cfg := Load()
 	if cfg.RemoveTorrentAfterImport {
 		t.Error("RemoveTorrentAfterImport should be false when explicitly disabled")
+	}
+}
+
+func TestActiveTorrentClient(t *testing.T) {
+	cases := []struct {
+		name string
+		cfg  Config
+		want string
+	}{
+		{"none", Config{}, ""},
+		{"qb only", Config{QBUrl: "http://qb"}, "qbittorrent"},
+		{"transmission only", Config{TransmissionURL: "http://tr"}, "transmission"},
+		{"both default prefers qb", Config{QBUrl: "http://qb", TransmissionURL: "http://tr"}, "qbittorrent"},
+		{"explicit transmission", Config{QBUrl: "http://qb", TransmissionURL: "http://tr", TorrentClient: "transmission"}, "transmission"},
+		{"explicit qb alias", Config{QBUrl: "http://qb", TransmissionURL: "http://tr", TorrentClient: "qbit"}, "qbittorrent"},
+		{"explicit transmission but unconfigured falls back", Config{QBUrl: "http://qb", TorrentClient: "transmission"}, "qbittorrent"},
+	}
+	for _, c := range cases {
+		if got := c.cfg.ActiveTorrentClient(); got != c.want {
+			t.Errorf("%s: ActiveTorrentClient() = %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+func TestHasTorrentClient(t *testing.T) {
+	if (&Config{}).HasTorrentClient() {
+		t.Error("empty config should have no torrent client")
+	}
+	if !(&Config{TransmissionURL: "http://tr"}).HasTorrentClient() {
+		t.Error("transmission-only config should report a torrent client")
 	}
 }

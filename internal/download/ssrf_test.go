@@ -36,7 +36,7 @@ func TestStartDirectDownloadRejectsLoopback(t *testing.T) {
 	d := NewDirectDownloader(cfg, &http.Client{Timeout: time.Second})
 	m := &Manager{cfg: cfg, direct: d}
 
-	if _, err := m.StartDirectDownload("http://127.0.0.1/x", "t", "src", ""); err == nil {
+	if _, err := m.StartDirectDownload("http://127.0.0.1/x", "t", "src", "", ""); err == nil {
 		t.Fatal("expected loopback URL to be rejected at StartDirectDownload")
 	}
 }

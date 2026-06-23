@@ -154,6 +154,7 @@ type Config struct {
 	OIDCAutoCreateUsers      bool
 	OIDCDefaultRole          string
 	OIDCRequireEmailVerified bool
+	OIDCProxyHeaders         bool
 
 	// Deluge
 	DelugeURL      string
@@ -163,6 +164,10 @@ type Config struct {
 	TransmissionURL  string
 	TransmissionUser string
 	TransmissionPass string
+
+	// TorrentClient explicitly selects the active torrent backend
+	// ("qbittorrent" or "transmission"). Empty means auto-detect.
+	TorrentClient string
 
 	// User Agent
 	UserAgent string
@@ -176,6 +181,12 @@ type Config struct {
 	SchedulerIntervalHours int
 	SchedulerAutoDownload  bool
 	SchedulerMinScore      int
+
+	// Wishlist cleanup removes wishlist rows that are already present in the
+	// library. It is intentionally opt-in and dry-run by default.
+	WishlistCleanupEnabled       bool
+	WishlistCleanupIntervalHours int
+	WishlistCleanupDryRun        bool
 
 	// Quality Profiles
 	AutoUpgradeEnabled bool
@@ -372,6 +383,7 @@ func buildFromEnv() *Config {
 		OIDCAutoCreateUsers:      getEnvBool("OIDC_AUTO_CREATE_USERS", true),
 		OIDCDefaultRole:          getEnv("OIDC_DEFAULT_ROLE", "user"),
 		OIDCRequireEmailVerified: getEnvBool("OIDC_REQUIRE_EMAIL_VERIFIED", true),
+		OIDCProxyHeaders:         getEnvBool("OIDC_PROXY_HEADERS_ENABLED", false),
 
 		DelugeURL:      getEnv("DELUGE_URL", ""),
 		DelugePassword: getEnv("DELUGE_PASSWORD", ""),
@@ -379,6 +391,8 @@ func buildFromEnv() *Config {
 		TransmissionURL:  getEnv("TRANSMISSION_URL", ""),
 		TransmissionUser: getEnv("TRANSMISSION_USER", ""),
 		TransmissionPass: getEnv("TRANSMISSION_PASS", ""),
+
+		TorrentClient: getEnv("TORRENT_CLIENT", ""),
 
 		UserAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
 
@@ -389,6 +403,10 @@ func buildFromEnv() *Config {
 		SchedulerIntervalHours: getEnvInt("SCHEDULER_INTERVAL_HOURS", 24),
 		SchedulerAutoDownload:  getEnvBool("SCHEDULER_AUTO_DOWNLOAD", false),
 		SchedulerMinScore:      getEnvInt("SCHEDULER_MIN_SCORE", 70),
+
+		WishlistCleanupEnabled:       getEnvBool("WISHLIST_CLEANUP_ENABLED", false),
+		WishlistCleanupIntervalHours: getEnvInt("WISHLIST_CLEANUP_INTERVAL_HOURS", 12),
+		WishlistCleanupDryRun:        getEnvBool("WISHLIST_CLEANUP_DRY_RUN", true),
 
 		AutoUpgradeEnabled: getEnvBool("AUTO_UPGRADE_ENABLED", false),
 
@@ -403,6 +421,11 @@ func buildFromEnv() *Config {
 // HasOIDC returns true if OIDC/SSO is configured.
 func (c *Config) HasOIDC() bool {
 	return c.OIDCEnabled && c.OIDCIssuer != "" && c.OIDCClientID != "" && c.OIDCClientSecret != ""
+}
+
+// HasOIDCProxyHeaders returns true when reverse-proxy SSO headers should be trusted.
+func (c *Config) HasOIDCProxyHeaders() bool {
+	return c.HasOIDC() && c.OIDCProxyHeaders
 }
 
 // HasQBittorrent returns true if qBittorrent is configured.
@@ -460,6 +483,37 @@ func (c *Config) HasTransmission() bool {
 	return c.TransmissionURL != ""
 }
 
+// HasTorrentClient returns true if any torrent download backend is configured.
+func (c *Config) HasTorrentClient() bool {
+	return c.HasQBittorrent() || c.HasTransmission()
+}
+
+// ActiveTorrentClient resolves which torrent backend handles torrents:
+//   - an explicit, configured TORRENT_CLIENT wins ("qbittorrent"/"qbit"/"qb"
+//     or "transmission");
+//   - otherwise qBittorrent is preferred for backward compatibility;
+//   - otherwise Transmission if it alone is configured;
+//   - else "" (no torrent client).
+func (c *Config) ActiveTorrentClient() string {
+	switch strings.ToLower(strings.TrimSpace(c.TorrentClient)) {
+	case "qbittorrent", "qbit", "qb":
+		if c.HasQBittorrent() {
+			return "qbittorrent"
+		}
+	case "transmission":
+		if c.HasTransmission() {
+			return "transmission"
+		}
+	}
+	if c.HasQBittorrent() {
+		return "qbittorrent"
+	}
+	if c.HasTransmission() {
+		return "transmission"
+	}
+	return ""
+}
+
 // HasFlibusta returns true if Flibusta is configured and enabled.
 func (c *Config) HasFlibusta() bool {
 	return c.FlibustaEnabled && c.FlibustaURL != ""
@@ -496,6 +550,10 @@ func (c *Config) applySettingsFileOverrides() {
 		"qb_url":                    &c.QBUrl,
 		"qb_user":                   &c.QBUser,
 		"qb_pass":                   &c.QBPass,
+		"transmission_url":          &c.TransmissionURL,
+		"transmission_user":         &c.TransmissionUser,
+		"transmission_pass":         &c.TransmissionPass,
+		"torrent_client":            &c.TorrentClient,
 		"prowlarr_url":              &c.ProwlarrURL,
 		"prowlarr_api_key":          &c.ProwlarrAPIKey,
 		"sabnzbd_url":               &c.SABnzbdURL,
@@ -549,6 +607,8 @@ func (c *Config) applySettingsFileOverrides() {
 		"zlibrary_enabled":            &c.ZLibraryEnabled,
 		"remove_torrent_after_import": &c.RemoveTorrentAfterImport,
 		"foreign_lang_filter":         &c.ForeignLangFilter,
+		"wishlist_cleanup_enabled":    &c.WishlistCleanupEnabled,
+		"wishlist_cleanup_dry_run":    &c.WishlistCleanupDryRun,
 	}
 	for key, fieldPtr := range boolPtrs {
 		v, ok := raw[key]
@@ -560,6 +620,26 @@ func (c *Config) applySettingsFileOverrides() {
 			continue
 		}
 		*fieldPtr = b
+	}
+
+	intPtrs := map[string]*int{
+		"wishlist_cleanup_interval_hours": &c.WishlistCleanupIntervalHours,
+	}
+	for key, fieldPtr := range intPtrs {
+		v, ok := raw[key]
+		if !ok {
+			continue
+		}
+		switch n := v.(type) {
+		case float64:
+			if n >= 1 {
+				*fieldPtr = int(n)
+			}
+		case int:
+			if n >= 1 {
+				*fieldPtr = n
+			}
+		}
 	}
 }
 

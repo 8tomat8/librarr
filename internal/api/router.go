@@ -29,6 +29,7 @@ type Server struct {
 	searchMgr      *search.Manager
 	downloadMgr    *download.Manager
 	qb             *download.QBittorrentClient
+	transmission   *download.TransmissionClient
 	sab            *download.SABnzbdClient
 	mux            *http.ServeMux
 	sessions       *SessionStore
@@ -40,12 +41,13 @@ type Server struct {
 	targets        *organize.LibraryTargets
 	webhookSender  *webhook.Sender
 	scheduler      *scheduler.Scheduler
+	wishlistClean  *scheduler.WishlistCleaner
 	seriesDetector *scheduler.SeriesDetector
 	authorMonitor  *scheduler.AuthorMonitor
 }
 
 // NewServer creates the HTTP API server.
-func NewServer(cfg *config.Config, database *db.DB, searchMgr *search.Manager, downloadMgr *download.Manager, qb *download.QBittorrentClient, sab *download.SABnzbdClient, organizer *organize.Organizer, targets *organize.LibraryTargets) *Server {
+func NewServer(cfg *config.Config, database *db.DB, searchMgr *search.Manager, downloadMgr *download.Manager, qb *download.QBittorrentClient, transmission *download.TransmissionClient, sab *download.SABnzbdClient, organizer *organize.Organizer, targets *organize.LibraryTargets) *Server {
 	sessions := NewSessionStore()
 
 	// Configure which reverse proxies may set forwarded headers we honor.
@@ -91,6 +93,7 @@ func NewServer(cfg *config.Config, database *db.DB, searchMgr *search.Manager, d
 
 	// Initialize scheduler, series detector, and author monitor.
 	sched := scheduler.NewScheduler(cfg, database, searchMgr, downloadMgr, ws)
+	wishlistClean := scheduler.NewWishlistCleaner(cfg, database)
 	seriesDet := scheduler.NewSeriesDetector(database, searchMgr, ws)
 	authorMon := scheduler.NewAuthorMonitor(cfg, database, ws)
 
@@ -100,6 +103,7 @@ func NewServer(cfg *config.Config, database *db.DB, searchMgr *search.Manager, d
 		searchMgr:      searchMgr,
 		downloadMgr:    downloadMgr,
 		qb:             qb,
+		transmission:   transmission,
 		sab:            sab,
 		mux:            http.NewServeMux(),
 		sessions:       sessions,
@@ -109,6 +113,7 @@ func NewServer(cfg *config.Config, database *db.DB, searchMgr *search.Manager, d
 		targets:        targets,
 		webhookSender:  ws,
 		scheduler:      sched,
+		wishlistClean:  wishlistClean,
 		seriesDetector: seriesDet,
 		authorMonitor:  authorMon,
 	}
@@ -136,6 +141,9 @@ func (s *Server) StartScheduler(ctx context.Context) {
 	// Start author monitor in a separate goroutine.
 	if s.authorMonitor != nil && s.cfg.AuthorMonitorEnabled {
 		go s.runAuthorMonitorLoop(ctx)
+	}
+	if s.wishlistClean != nil && s.cfg.WishlistCleanupEnabled {
+		go s.wishlistClean.Start(ctx)
 	}
 	// Scheduler.Start blocks until ctx is cancelled.
 	if s.scheduler != nil {
@@ -286,6 +294,7 @@ func (s *Server) registerRoutes() {
 	// Connection tests (admin only — SSRF risk).
 	s.mux.HandleFunc("POST /api/test/prowlarr", requireAdmin(s.handleTestProwlarr))
 	s.mux.HandleFunc("POST /api/test/qbittorrent", requireAdmin(s.handleTestQBittorrent))
+	s.mux.HandleFunc("POST /api/test/transmission", requireAdmin(s.handleTestTransmission))
 	s.mux.HandleFunc("POST /api/test/audiobookshelf", requireAdmin(s.handleTestAudiobookshelf))
 	s.mux.HandleFunc("POST /api/test/kavita", requireAdmin(s.handleTestKavita))
 	s.mux.HandleFunc("POST /api/test/sabnzbd", requireAdmin(s.handleTestSABnzbd))

@@ -15,14 +15,15 @@ const maskedValue = "--------"
 
 // sensitiveKeys are settings keys that should be masked in GET responses.
 var sensitiveKeys = map[string]bool{
-	"prowlarr_api_key": true,
-	"qb_pass":          true,
-	"abs_token":        true,
-	"kavita_pass":      true,
-	"api_key":          true,
-	"auth_password":    true,
-	"komga_pass":       true,
-	"sabnzbd_api_key":  true,
+	"prowlarr_api_key":  true,
+	"qb_pass":           true,
+	"abs_token":         true,
+	"kavita_pass":       true,
+	"api_key":           true,
+	"auth_password":     true,
+	"komga_pass":        true,
+	"sabnzbd_api_key":   true,
+	"transmission_pass": true,
 }
 
 func (s *Server) handleGetSettings(w http.ResponseWriter, _ *http.Request) {
@@ -52,6 +53,10 @@ func (s *Server) handleGetSettings(w http.ResponseWriter, _ *http.Request) {
 		"qb_url":               s.cfg.QBUrl,
 		"qb_user":              s.cfg.QBUser,
 		"qb_pass":              s.cfg.QBPass,
+		"transmission_url":     s.cfg.TransmissionURL,
+		"transmission_user":    s.cfg.TransmissionUser,
+		"transmission_pass":    s.cfg.TransmissionPass,
+		"torrent_client":       s.cfg.TorrentClient,
 		"prowlarr_url":         s.cfg.ProwlarrURL,
 		"prowlarr_api_key":     s.cfg.ProwlarrAPIKey,
 		"sabnzbd_url":          s.cfg.SABnzbdURL,
@@ -236,6 +241,12 @@ func (s *Server) handleTestProwlarr(w http.ResponseWriter, r *http.Request) {
 // handleTestQBittorrent actually tests qBittorrent login.
 func (s *Server) handleTestQBittorrent(w http.ResponseWriter, _ *http.Request) {
 	result := s.qb.Diagnose()
+	writeJSON(w, http.StatusOK, result)
+}
+
+// handleTestTransmission tests the Transmission RPC connection.
+func (s *Server) handleTestTransmission(w http.ResponseWriter, _ *http.Request) {
+	result := s.transmission.Diagnose()
 	writeJSON(w, http.StatusOK, result)
 }
 

@@ -3,6 +3,7 @@ package download
 import (
 	"context"
 	"fmt"
+	"html"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -17,11 +18,12 @@ import (
 	"github.com/JeremiahM37/librarr/internal/search"
 )
 
-// Watcher monitors qBittorrent for completed torrents and runs the import pipeline.
+// Watcher monitors the active torrent client for completed torrents and runs
+// the import pipeline.
 type Watcher struct {
 	cfg       *config.Config
 	db        *db.DB
-	qb        *QBittorrentClient
+	torrent   TorrentClient
 	organizer *organize.Organizer
 	targets   *organize.LibraryTargets
 	health    *search.HealthTracker
@@ -31,11 +33,11 @@ type Watcher struct {
 }
 
 // NewWatcher creates a new torrent completion watcher.
-func NewWatcher(cfg *config.Config, database *db.DB, qb *QBittorrentClient, organizer *organize.Organizer, targets *organize.LibraryTargets, health *search.HealthTracker) *Watcher {
+func NewWatcher(cfg *config.Config, database *db.DB, torrent TorrentClient, organizer *organize.Organizer, targets *organize.LibraryTargets, health *search.HealthTracker) *Watcher {
 	return &Watcher{
 		cfg:       cfg,
 		db:        database,
-		qb:        qb,
+		torrent:   torrent,
 		organizer: organizer,
 		targets:   targets,
 		health:    health,
@@ -44,12 +46,12 @@ func NewWatcher(cfg *config.Config, database *db.DB, qb *QBittorrentClient, orga
 
 // Start begins the background watcher loop. It blocks until ctx is cancelled.
 func (w *Watcher) Start(ctx context.Context) {
-	if !w.cfg.HasQBittorrent() {
-		slog.Info("torrent watcher disabled (qBittorrent not configured)")
+	if w.torrent == nil {
+		slog.Info("torrent watcher disabled (no torrent client configured)")
 		return
 	}
 
-	slog.Info("torrent completion watcher started", "interval", "30s")
+	slog.Info("torrent completion watcher started", "client", w.torrent.Name(), "interval", "30s")
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
@@ -78,7 +80,7 @@ func (w *Watcher) checkCompleted() {
 	}
 
 	for _, cat := range categories {
-		torrents, err := w.qb.GetTorrents(cat.name)
+		torrents, err := w.torrent.GetTorrents(cat.name)
 		if err != nil {
 			continue
 		}
@@ -123,10 +125,10 @@ func (w *Watcher) importTorrent(t TorrentInfo, mediaType string) {
 		return
 	}
 
-	// Optionally remove torrent from qBit after import. Default is to leave
-	// it seeding — users who want auto-removal set REMOVE_TORRENT_AFTER_IMPORT=true.
+	// Optionally remove torrent from qBit after import. Default is to remove;
+	// set REMOVE_TORRENT_AFTER_IMPORT=false to keep seeding (e.g. private trackers).
 	if w.cfg.RemoveTorrentAfterImport {
-		if err := w.qb.DeleteTorrent(t.Hash, false); err != nil {
+		if err := w.torrent.DeleteTorrent(t.Hash, false); err != nil {
 			slog.Warn("failed to remove torrent after import", "hash", t.Hash, "error", err)
 		} else {
 			slog.Info("removed completed torrent", "name", t.Name)
@@ -149,19 +151,93 @@ func (w *Watcher) importTorrent(t TorrentInfo, mediaType string) {
 // to be looked up in the wrong place and could lead to ebooks being
 // misrouted if paths overlapped.
 func (w *Watcher) resolveLocalPath(t TorrentInfo, mediaType string) string {
+	var rootName string
+
+	if t.ContentPath != "" {
+		return w.resolveContentPath(t, mediaType)
+	}
+
+	// Fetch files from qBittorrent to find the actual root folder/file.
+	var files []TorrentFile
+	var err error
+	if w.torrent != nil {
+		files, err = w.torrent.GetTorrentFiles(t.Hash)
+	}
+	if err == nil && len(files) > 0 {
+		var firstPart string
+		allSameRoot := true
+		for i, f := range files {
+			parts := strings.Split(f.Name, "/")
+			if len(parts) > 0 {
+				if i == 0 {
+					firstPart = parts[0]
+				} else if firstPart != parts[0] {
+					allSameRoot = false
+					break
+				}
+			}
+		}
+		if allSameRoot && firstPart != "" {
+			rootName = normalizeTorrentPath(firstPart)
+		}
+	}
+
+	if rootName == "" {
+		rootName = normalizeTorrentPath(t.Name)
+	}
+
+	return filepath.Join(w.incomingDirForMedia(mediaType), rootName)
+}
+
+func (w *Watcher) incomingDirForMedia(mediaType string) string {
 	switch mediaType {
 	case "ebook":
-		return filepath.Join(w.cfg.IncomingDir, t.Name)
+		return w.cfg.IncomingDir
 	case "audiobook":
 		if w.cfg.QBAudiobookSavePath != "" {
-			return filepath.Join(w.cfg.QBAudiobookSavePath, t.Name)
+			return w.cfg.QBAudiobookSavePath
 		}
-		return filepath.Join(w.cfg.IncomingDir, t.Name)
+		return w.cfg.IncomingDir
 	case "manga":
-		return filepath.Join(w.cfg.MangaIncomingDir, t.Name)
+		if w.cfg.MangaIncomingDir != "" {
+			return w.cfg.MangaIncomingDir
+		}
+		return w.cfg.IncomingDir
 	default:
-		return filepath.Join(w.cfg.IncomingDir, t.Name)
+		return w.cfg.IncomingDir
 	}
+}
+
+func (w *Watcher) resolveContentPath(t TorrentInfo, mediaType string) string {
+	contentPath := normalizeTorrentPath(t.ContentPath)
+	savePath := normalizeTorrentPath(t.SavePath)
+	localIncoming := w.incomingDirForMedia(mediaType)
+
+	if contentPath == "" {
+		return localIncoming
+	}
+
+	if localIncoming != "" {
+		if rel, err := filepath.Rel(localIncoming, contentPath); err == nil && rel == "." {
+			return contentPath
+		} else if err == nil && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)) && rel != ".." {
+			return contentPath
+		}
+	}
+
+	if savePath != "" {
+		if rel, err := filepath.Rel(savePath, contentPath); err == nil && rel == "." {
+			return localIncoming
+		} else if err == nil && !strings.HasPrefix(rel, ".."+string(os.PathSeparator)) && rel != ".." {
+			return filepath.Join(localIncoming, rel)
+		}
+	}
+
+	if !filepath.IsAbs(contentPath) && contentPath != ".." && !strings.HasPrefix(contentPath, ".."+string(os.PathSeparator)) {
+		return filepath.Join(localIncoming, contentPath)
+	}
+
+	return filepath.Join(localIncoming, filepath.Base(contentPath))
 }
 
 func (w *Watcher) importEbook(t TorrentInfo, savePath string) error {
@@ -203,6 +279,11 @@ func (w *Watcher) importEbook(t TorrentInfo, savePath string) error {
 }
 
 func (w *Watcher) importAudiobook(t TorrentInfo, savePath string) error {
+	// If the source path doesn't even exist, fail the import.
+	if _, statErr := os.Stat(savePath); os.IsNotExist(statErr) {
+		return fmt.Errorf("source path does not exist: %s", savePath)
+	}
+
 	// Extract author from torrent name if possible.
 	author := ""
 	title := t.Name
@@ -217,8 +298,7 @@ func (w *Watcher) importAudiobook(t TorrentInfo, savePath string) error {
 
 	destPath, err := w.organizer.OrganizeAudiobook(savePath, title, author)
 	if err != nil {
-		slog.Warn("organize audiobook failed", "path", savePath, "error", err)
-		destPath = savePath
+		return fmt.Errorf("organize audiobook %q: %w", savePath, err)
 	}
 
 	w.db.AddItem(&models.LibraryItem{
@@ -262,6 +342,16 @@ func (w *Watcher) importManga(t TorrentInfo, savePath string) error {
 	}
 
 	return nil
+}
+
+// normalizeTorrentPath unescapes HTML entities (e.g. &amp; -> &) that
+// qBittorrent may embed in torrent names.
+func normalizeTorrentPath(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	return html.UnescapeString(value)
 }
 
 // findFilesByExt recursively finds files with given extensions.

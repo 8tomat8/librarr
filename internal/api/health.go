@@ -7,11 +7,14 @@ import (
 	"net/http"
 	"runtime"
 	"time"
+
+	"github.com/JeremiahM37/librarr/internal/version"
 )
 
-// Set at build time via -ldflags
+// Version comes from the embedded VERSION file (see internal/version).
+// BuildTime may still be injected at build time via -ldflags.
 var (
-	Version   = "1.0.0"
+	Version   = version.Version
 	BuildTime = "unknown"
 	GoVersion = runtime.Version()
 )
@@ -96,6 +99,8 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	resp := map[string]interface{}{
 		"prowlarr":            configObj(s.cfg.HasProwlarr(), s.cfg.ProwlarrURL),
 		"qbittorrent":         configObj(s.cfg.HasQBittorrent(), s.cfg.QBUrl),
+		"transmission":        configObj(s.cfg.HasTransmission(), s.cfg.TransmissionURL),
+		"torrent_client":      s.cfg.ActiveTorrentClient(),
 		"audiobookshelf":      s.cfg.HasAudiobookshelf(),
 		"kavita":              s.cfg.HasKavita(),
 		"calibre":             s.cfg.HasCalibre(),

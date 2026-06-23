@@ -1,7 +1,6 @@
 package download
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -46,9 +45,8 @@ func TestPipelineDirectDownloadOrganizeImport(t *testing.T) {
 	direct.validate = nil // httptest serves on loopback; not exercising the SSRF guard here
 	organizer := organize.NewOrganizer(cfg)
 	mgr := NewManager(cfg, database, nil, nil, direct, organizer, nil, health)
-	mgr.SetShutdownContext(context.Background())
 
-	job, err := mgr.StartDirectDownload(srv.URL, "Pipeline Test Book", "test", "pipeline-test-1")
+	job, err := mgr.StartDirectDownload(srv.URL, "Pipeline Test Book", "test", "pipeline-test-1", "")
 	if err != nil {
 		t.Fatalf("StartDirectDownload: %v", err)
 	}

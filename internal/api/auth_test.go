@@ -1,6 +1,8 @@
 package api
 
 import (
+	"context"
+	"crypto/tls"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -15,8 +17,8 @@ import (
 func TestSessionStore_CreateAndGet(t *testing.T) {
 	store := NewSessionStore()
 
-	token, err := store.Create(1, "testuser", "admin")
-	if err != nil || token == "" {
+	token := store.Create(1, "testuser", "admin")
+	if token == "" {
 		t.Fatal("expected non-empty token")
 	}
 
@@ -37,10 +39,7 @@ func TestSessionStore_CreateAndGet(t *testing.T) {
 
 func TestSessionStore_Valid(t *testing.T) {
 	store := NewSessionStore()
-	token, err := store.Create(1, "user", "admin")
-	if err != nil {
-		t.Fatal(err)
-	}
+	token := store.Create(1, "user", "admin")
 
 	if !store.Valid(token) {
 		t.Error("expected token to be valid")
@@ -53,10 +52,7 @@ func TestSessionStore_Valid(t *testing.T) {
 
 func TestSessionStore_Delete(t *testing.T) {
 	store := NewSessionStore()
-	token, err := store.Create(1, "user", "admin")
-	if err != nil {
-		t.Fatal(err)
-	}
+	token := store.Create(1, "user", "admin")
 
 	store.Delete(token)
 	if store.Valid(token) {
@@ -66,10 +62,7 @@ func TestSessionStore_Delete(t *testing.T) {
 
 func TestSessionStore_Expiry(t *testing.T) {
 	store := NewSessionStore()
-	token, err := store.Create(1, "user", "admin")
-	if err != nil {
-		t.Fatal(err)
-	}
+	token := store.Create(1, "user", "admin")
 
 	// Manually expire the session
 	store.mu.Lock()
@@ -93,8 +86,8 @@ func TestSessionStore_PendingTOTP(t *testing.T) {
 	store := NewSessionStore()
 
 	t.Run("create and validate", func(t *testing.T) {
-		token, err := store.CreatePendingTOTP(42)
-		if err != nil || token == "" {
+		token := store.CreatePendingTOTP(42)
+		if token == "" {
 			t.Fatal("expected non-empty pending token")
 		}
 
@@ -108,10 +101,7 @@ func TestSessionStore_PendingTOTP(t *testing.T) {
 	})
 
 	t.Run("consumed after first use", func(t *testing.T) {
-		token, err := store.CreatePendingTOTP(1)
-		if err != nil {
-			t.Fatal(err)
-		}
+		token := store.CreatePendingTOTP(1)
 		store.ValidatePendingTOTP(token)
 
 		_, valid := store.ValidatePendingTOTP(token)
@@ -121,10 +111,7 @@ func TestSessionStore_PendingTOTP(t *testing.T) {
 	})
 
 	t.Run("expired pending TOTP", func(t *testing.T) {
-		token, err := store.CreatePendingTOTP(1)
-		if err != nil {
-			t.Fatal(err)
-		}
+		token := store.CreatePendingTOTP(1)
 
 		store.mu.Lock()
 		store.pendingTOTP[token].Expiry = time.Now().Add(-1 * time.Minute)
@@ -149,10 +136,7 @@ func TestSessionStore_UniqueTokens(t *testing.T) {
 	tokens := make(map[string]bool)
 
 	for i := 0; i < 100; i++ {
-		token, err := store.Create(int64(i), "user", "admin")
-		if err != nil {
-			t.Fatal(err)
-		}
+		token := store.Create(int64(i), "user", "admin")
 		if tokens[token] {
 			t.Fatalf("duplicate token generated: %s", token)
 		}
@@ -199,6 +183,73 @@ func TestHashBackupCode(t *testing.T) {
 	}
 }
 
+func TestSetSessionCookieSecureFlag(t *testing.T) {
+	// httptest.NewRequest sets RemoteAddr to 192.0.2.1:1234, so a trusted-proxy
+	// entry of 192.0.2.1/32 marks the request's peer as a trusted proxy.
+	t.Cleanup(func() { setTrustedProxies(nil) })
+
+	tests := []struct {
+		name       string
+		trusted    []string
+		configure  func(*http.Request)
+		wantSecure bool
+	}{
+		{
+			name: "plain HTTP dev request",
+		},
+		{
+			name: "direct TLS request",
+			configure: func(r *http.Request) {
+				r.TLS = &tls.ConnectionState{}
+			},
+			wantSecure: true,
+		},
+		{
+			name:    "X-Forwarded-Proto from trusted proxy",
+			trusted: []string{"192.0.2.1/32"},
+			configure: func(r *http.Request) {
+				r.Header.Set("X-Forwarded-Proto", "https")
+			},
+			wantSecure: true,
+		},
+		{
+			name:    "standard Forwarded header from trusted proxy",
+			trusted: []string{"192.0.2.1/32"},
+			configure: func(r *http.Request) {
+				r.Header.Set("Forwarded", "for=192.0.2.60;proto=https;host=books.example.com")
+			},
+			wantSecure: true,
+		},
+		{
+			name: "forwarded HTTPS from untrusted peer is ignored",
+			configure: func(r *http.Request) {
+				r.Header.Set("X-Forwarded-Proto", "https")
+			},
+			wantSecure: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setTrustedProxies(tt.trusted)
+			req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
+			if tt.configure != nil {
+				tt.configure(req)
+			}
+			rr := httptest.NewRecorder()
+			setSessionCookie(rr, req, "token", 86400)
+
+			cookies := rr.Result().Cookies()
+			if len(cookies) != 1 {
+				t.Fatalf("cookie count = %d, want 1", len(cookies))
+			}
+			if cookies[0].Secure != tt.wantSecure {
+				t.Fatalf("Secure = %v, want %v", cookies[0].Secure, tt.wantSecure)
+			}
+		})
+	}
+}
+
 func TestIsExempt(t *testing.T) {
 	tests := []struct {
 		path     string
@@ -216,11 +267,7 @@ func TestIsExempt(t *testing.T) {
 		{"/torznab/api?t=caps", true},
 		{"/static/style.css", true},
 		{"/opds", true},
-		{"/opds/", true},
-		{"/opds/opensearch.xml", true},
-		{"/opds/books", false},
-		{"/opds/search", false},
-		{"/opds/download/1", false},
+		{"/opds/books", true},
 		{"/metrics", true},
 		{"/auth/oidc/callback", true},
 		// OpenAPI spec is public so AI agents / tooling can introspect the
@@ -337,33 +384,247 @@ func TestHandleAuthStatus_OIDCHints(t *testing.T) {
 	}
 }
 
-func TestAuthMiddleware_NoAuthGrantsAdmin(t *testing.T) {
+func newOIDCTestConfig() *config.Config {
+	return &config.Config{
+		OIDCEnabled:         true,
+		OIDCIssuer:          "https://idp.example.com",
+		OIDCClientID:        "client",
+		OIDCClientSecret:    "secret",
+		OIDCAutoCreateUsers: true,
+		OIDCDefaultRole:     "user",
+		OIDCProxyHeaders:    true,
+	}
+}
+
+func TestAuthMiddleware_AcceptsAuthentikProxyHeaders(t *testing.T) {
 	dir := t.TempDir()
 	database, err := db.New(filepath.Join(dir, "test.db"))
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("create test db: %v", err)
+	}
+	t.Cleanup(func() { database.Close() })
+	sessions := NewSessionStore()
+
+	var gotUsername, gotRole string
+	var gotUserID int64
+	handler := authMiddleware(newOIDCTestConfig(), database, sessions, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotUserID = getUserIDFromContext(r)
+		gotUsername, _ = r.Context().Value(ctxUsername).(string)
+		gotRole, _ = r.Context().Value(ctxUserRole).(string)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
+	req.Header.Set("X-Authentik-Username", "alice")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204; body=%s", rr.Code, rr.Body.String())
+	}
+	if gotUsername != "alice" {
+		t.Fatalf("username = %q, want alice", gotUsername)
+	}
+	if gotRole != "admin" {
+		t.Fatalf("role = %q, want admin for first SSO user", gotRole)
+	}
+	if gotUserID == 0 {
+		t.Fatal("expected a resolved user ID")
+	}
+	if _, err := database.GetUserByUsername("alice"); err != nil {
+		t.Fatalf("expected alice user to be created: %v", err)
+	}
+
+	var sessionCookie bool
+	for _, cookie := range rr.Result().Cookies() {
+		if cookie.Name == sessionCookieName {
+			sessionCookie = true
+			break
+		}
+	}
+	if !sessionCookie {
+		t.Fatal("expected proxy-auth login to set a session cookie")
+	}
+}
+
+func TestAuthMiddleware_IgnoresAuthentikHeadersWhenOIDCDisabled(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.New(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("create test db: %v", err)
+	}
+	t.Cleanup(func() { database.Close() })
+	sessions := NewSessionStore()
+
+	hash, err := hashPassword("password")
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	if _, err := database.CreateUser("existing", hash, "admin"); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+
+	called := false
+	handler := authMiddleware(&config.Config{}, database, sessions, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
+	req.Header.Set("X-Authentik-Username", "alice")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if called {
+		t.Fatal("expected proxy header to be ignored when OIDC is disabled")
+	}
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", rr.Code)
+	}
+}
+
+func TestAuthMiddleware_IgnoresAuthentikHeadersWhenProxyHeadersDisabled(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.New(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("create test db: %v", err)
+	}
+	t.Cleanup(func() { database.Close() })
+	sessions := NewSessionStore()
+
+	hash, err := hashPassword("password")
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	if _, err := database.CreateUser("existing", hash, "admin"); err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+
+	cfg := newOIDCTestConfig()
+	cfg.OIDCProxyHeaders = false
+
+	called := false
+	handler := authMiddleware(cfg, database, sessions, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
+	req.Header.Set("X-Authentik-Username", "alice")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	if called {
+		t.Fatal("expected proxy header to be ignored when proxy header auth is disabled")
+	}
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", rr.Code)
+	}
+}
+
+func TestHandleAuthStatus_AuthentikProxyHeaders(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.New(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("create test db: %v", err)
+	}
+	t.Cleanup(func() { database.Close() })
+	sessions := NewSessionStore()
+
+	user, err := resolveOIDCUser(newOIDCTestConfig(), database, "alice")
+	if err != nil {
+		t.Fatalf("seed SSO user: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/status", nil)
+	req.Header.Set("X-Authentik-Username", "alice")
+	req = req.WithContext(context.WithValue(req.Context(), ctxUserID, user.ID))
+	req = req.WithContext(context.WithValue(req.Context(), ctxUsername, user.Username))
+	req = req.WithContext(context.WithValue(req.Context(), ctxUserRole, user.Role))
+	rr := httptest.NewRecorder()
+	handleAuthStatus(newOIDCTestConfig(), database, sessions)(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rr.Code, rr.Body.String())
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if got, _ := resp["authenticated"].(bool); !got {
+		t.Fatalf("authenticated = %v, want true", got)
+	}
+	if got, _ := resp["username"].(string); got != "alice" {
+		t.Fatalf("username = %q, want alice", got)
+	}
+	if got, _ := resp["role"].(string); got != "admin" {
+		t.Fatalf("role = %q, want admin", got)
+	}
+	if got, _ := resp["user_id"].(float64); got == 0 {
+		t.Fatal("expected a resolved user_id")
+	}
+}
+
+func TestHandleAuthStatus_ProxyHeaderDoesNotCreateUser(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.New(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("create test db: %v", err)
+	}
+	t.Cleanup(func() { database.Close() })
+	sessions := NewSessionStore()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/status", nil)
+	req.Header.Set("X-Authentik-Username", "alice")
+	rr := httptest.NewRecorder()
+	handleAuthStatus(newOIDCTestConfig(), database, sessions)(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", rr.Code, rr.Body.String())
+	}
+	count, err := database.CountUsers()
+	if err != nil {
+		t.Fatalf("count users: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("user count = %d, want 0", count)
+	}
+}
+
+// TestAuthMiddleware_OpenInstanceGrantsAdmin is a regression test for issue
+// #76: on a userless instance with no auth and no API key configured, the
+// open-access pass-through must mark the caller as admin so admin-gated routes
+// (POST /api/settings, etc.) work instead of failing requireAdmin with a 403.
+func TestAuthMiddleware_OpenInstanceGrantsAdmin(t *testing.T) {
+	dir := t.TempDir()
+	database, err := db.New(filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("create test db: %v", err)
 	}
 	t.Cleanup(func() { database.Close() })
 
-	cfg := &config.Config{}
-	sessions := NewSessionStore()
-
+	// Empty config => no legacy auth, no API key. No users in the DB => not
+	// multi-user. This is a fresh, open instance.
+	called := false
 	var gotRole string
-	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	final := func(w http.ResponseWriter, r *http.Request) {
+		called = true
 		gotRole, _ = r.Context().Value(ctxUserRole).(string)
-		w.WriteHeader(http.StatusOK)
-	})
-
-	handler := authMiddleware(cfg, database, sessions, requireAdmin(inner))
+		w.WriteHeader(http.StatusNoContent)
+	}
+	handler := authMiddleware(&config.Config{}, database, NewSessionStore(), requireAdmin(final))
 
 	req := httptest.NewRequest(http.MethodPost, "/api/settings", nil)
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, req)
 
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204; body=%s", rr.Code, rr.Body.String())
+	}
+	if !called {
+		t.Fatal("admin-gated handler was not reached on an open instance")
 	}
 	if gotRole != "admin" {
-		t.Errorf("expected admin role in context, got %q", gotRole)
+		t.Fatalf("role = %q, want admin on an open instance", gotRole)
 	}
 }
